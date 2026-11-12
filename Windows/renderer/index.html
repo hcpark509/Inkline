@@ -1,11 +1,120 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Inkline</title><link rel="stylesheet" href="app.css"><script type="module" src="editor.js"></script></head>
-<body>
-<header class="app-header"><div class="brand"><span class="brand-mark">▤</span><div><strong>Inkline</strong><small>DOCUMENT EDITOR</small></div></div><div class="segmented" aria-label="Editor layout"><button data-command="source">Source</button><button data-command="split" class="selected">Split</button><button data-command="preview">Preview</button></div><div class="header-actions"><select id="format" aria-label="Document format"><option value="markdown">Markdown</option><option value="latex">LaTeX</option><option value="html">HTML</option></select><button data-command="open">Open…</button><button data-command="save">Save</button><button data-command="settings" aria-label="Open settings">⚙</button></div></header>
-<nav id="tabs" aria-label="Open documents"></nav>
-<main id="workspace"><aside id="project" hidden><div class="pane-bar"><strong id="projectName">Project</strong><button id="refreshProject" aria-label="Refresh project">↻</button></div><div id="projectFiles" role="tree" aria-label="Project files"></div></aside><section id="documentArea" data-view="split"><section class="source-pane"><div class="pane-bar"><strong>⌘ Source</strong><div class="format-tools"><button data-command="heading" title="Heading">H</button><button data-command="bold" title="Bold"><b>B</b></button><button data-command="italic" title="Italic"><i>I</i></button><button data-command="link" title="Link">↗</button><button data-command="table" title="Insert table">▦</button><button data-command="figure" title="Insert figure">▧</button></div></div><div id="editor" aria-label="Source editor"></div></section><div id="divider" role="separator" aria-label="Resize source and preview" aria-orientation="vertical" tabindex="0"></div><section class="preview-pane"><div class="pane-bar"><strong>Preview</strong><div id="liveStatus">● Live</div><div id="latexTools" hidden><select id="engine" aria-label="LaTeX compiler"><option value="pdflatex">pdfLaTeX</option><option value="xelatex">XeLaTeX</option></select><button data-command="log">Log</button><button data-command="compile" id="compileButton">Recompile</button></div></div><iframe id="preview" title="Rendered document preview" sandbox="allow-same-origin"></iframe><div id="latexPreview" hidden><div class="empty"><h1>LaTeX PDF preview</h1><p>Press Ctrl+Enter to compile your document.</p></div></div></section></section></main>
-<footer><span id="documentStatus">Markdown</span><span id="notice" role="status"></span><span id="saveStatus">Manual save</span><span id="counts">0 words</span><span id="position">Ln 1, Col 1</span></footer>
-<dialog id="tableDialog"><div class="dialog-heading"><h2>Insert table</h2><p>Choose a size and enter the values of each cell.</p></div><div class="table-controls"><label>Rows <input id="tableRows" type="number" min="1" max="100" value="3"></label><label>Columns <input id="tableColumns" type="number" min="1" max="20" value="3"></label><label><input id="tableHeader" type="checkbox" checked> First row is a header</label></div><div id="tableGrid" class="table-grid"></div><pre id="tableSource" aria-label="Generated table source"></pre><div class="dialog-actions"><button id="cancelTable">Cancel</button><button id="insertTable" class="primary">Insert Table</button></div></dialog>
-<dialog id="logDialog"><h2>LaTeX compile log</h2><pre id="compileLog"></pre><div class="dialog-actions"><button id="closeLog">Close</button></div></dialog>
-<dialog id="errorDialog"><h2>Inkline</h2><p id="errorMessage"></p><div class="dialog-actions"><button id="closeError">Close</button></div></dialog>
-</body></html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Inkline</title>
+    <link rel="stylesheet" href="app.css" />
+    <script type="module" src="editor.js"></script>
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="brand">
+        <span class="brand-mark">▤</span>
+        <div><strong>Inkline</strong><small>DOCUMENT EDITOR</small></div>
+      </div>
+      <div class="segmented" aria-label="Editor layout">
+        <button data-command="source">Source</button
+        ><button data-command="split" class="selected">Split</button
+        ><button data-command="preview">Preview</button>
+      </div>
+      <div class="header-actions">
+        <select id="format" aria-label="Document format">
+          <option value="markdown">Markdown</option>
+          <option value="latex">LaTeX</option>
+          <option value="html">HTML</option></select
+        ><button data-command="open">Open…</button><button data-command="save">Save</button
+        ><button data-command="settings" aria-label="Open settings">⚙</button>
+      </div>
+    </header>
+    <nav id="tabs" aria-label="Open documents"></nav>
+    <main id="workspace">
+      <aside id="project" hidden>
+        <div class="pane-bar">
+          <strong id="projectName">Project</strong
+          ><button id="refreshProject" aria-label="Refresh project">↻</button>
+        </div>
+        <div id="projectFiles" role="tree" aria-label="Project files"></div>
+      </aside>
+      <section id="documentArea" data-view="split">
+        <section class="source-pane">
+          <div class="pane-bar">
+            <strong>Source</strong>
+            <div class="format-tools">
+              <button data-command="heading" title="Heading">H</button
+              ><button data-command="bold" title="Bold"><b>B</b></button
+              ><button data-command="italic" title="Italic"><i>I</i></button
+              ><button data-command="link" title="Link">↗</button
+              ><button data-command="table" title="Insert table">▦</button
+              ><button data-command="figure" title="Insert figure">▧</button>
+            </div>
+          </div>
+          <div id="editor" aria-label="Source editor"></div>
+        </section>
+        <div
+          id="divider"
+          role="separator"
+          aria-label="Resize source and preview"
+          aria-orientation="vertical"
+          tabindex="0"
+        ></div>
+        <section class="preview-pane">
+          <div class="pane-bar">
+            <strong>Preview</strong>
+            <div id="liveStatus">● Live</div>
+            <div id="latexTools" hidden>
+              <select id="engine" aria-label="LaTeX compiler">
+                <option value="pdflatex">pdfLaTeX</option>
+                <option value="xelatex">XeLaTeX</option></select
+              ><button data-command="log">Log</button
+              ><button data-command="compile" id="compileButton">Recompile</button>
+            </div>
+          </div>
+          <iframe
+            id="preview"
+            title="Rendered document preview"
+            sandbox="allow-same-origin"
+          ></iframe>
+          <div id="latexPreview" hidden>
+            <div class="empty">
+              <h1>LaTeX PDF preview</h1>
+              <p>Press Ctrl+Enter to compile your document.</p>
+            </div>
+          </div>
+        </section>
+      </section>
+    </main>
+    <footer>
+      <span id="documentStatus">Markdown</span><span id="notice" role="status"></span
+      ><span id="saveStatus">Manual save</span><span id="counts">0 words</span
+      ><span id="position">Ln 1, Col 1</span>
+    </footer>
+    <dialog id="tableDialog">
+      <div class="dialog-heading">
+        <h2>Insert table</h2>
+        <p>Choose a size and enter the values of each cell.</p>
+      </div>
+      <div class="table-controls">
+        <label>Rows <input id="tableRows" type="number" min="1" max="100" value="3" /></label
+        ><label>Columns <input id="tableColumns" type="number" min="1" max="20" value="3" /></label
+        ><label><input id="tableHeader" type="checkbox" checked /> First row is a header</label>
+      </div>
+      <div id="tableGrid" class="table-grid"></div>
+      <pre id="tableSource" aria-label="Generated table source"></pre>
+      <div class="dialog-actions">
+        <button id="cancelTable">Cancel</button
+        ><button id="insertTable" class="primary">Insert Table</button>
+      </div>
+    </dialog>
+    <dialog id="logDialog">
+      <h2>LaTeX compile log</h2>
+      <pre id="compileLog"></pre>
+      <div class="dialog-actions"><button id="closeLog">Close</button></div>
+    </dialog>
+    <dialog id="errorDialog">
+      <h2>Inkline</h2>
+      <p id="errorMessage"></p>
+      <div class="dialog-actions"><button id="closeError">Close</button></div>
+    </dialog>
+  </body>
+</html>

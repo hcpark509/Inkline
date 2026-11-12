@@ -60,15 +60,15 @@ Choose **File → Open Project Folder** to keep documents and figures together. 
 After installing Inkline, run this in PowerShell, adjusting the executable and shared folder if needed:
 
 ```powershell
-$inkline = Join-Path $env:LOCALAPPDATA 'Programs\Inkline\Inkline.exe'
+$inkline = Join-Path $env:LOCALAPPDATA 'Programs\Inkline\Inkline-MCP.exe'
 codex mcp add inkline-windows -- $inkline mcp `
   --automation-read-root 'C:\Documents\MyProject' `
   --automation-write-root 'C:\Documents\MyProject'
 ```
 
-The folder must already exist. If you chose a different installation folder or use the ZIP, point the command to that `Inkline.exe`. Restart the MCP client after adding the connection.
+The folder must already exist. If you chose a different installation folder or use the ZIP, point the command to that `Inkline-MCP.exe`. Restart the MCP client after adding the connection.
 
-The helper starts the matching GUI app when needed. Write roots also grant read access. With no roots, only untitled documents are available. Content edits require a current revision and enter the editor's Undo history. Unique-match edits reject ambiguous text. Existing unrelated save/export destinations require `overwrite=true`. Modified documents must be saved before MCP closes them. Saved format changes create untitled copies.
+The bundled **Inkline-MCP.exe** is a Windows console helper with its own included Node runtime; no separate Node installation is needed. It starts the matching GUI app when needed. Write roots also grant read access. With no roots, only untitled documents are available. Content edits require a current revision and enter the editor's Undo history. Unique-match edits reject ambiguous text. Existing unrelated save/export destinations require `overwrite=true`. Modified documents must be saved before MCP closes them. Saved format changes create untitled copies.
 
 The supported tools are `list_documents`, `read_document`, `create_document`, `open_document`, `close_document`, `replace_document`, `edit_document`, `save_document`, `set_view`, `set_format`, `compile_latex`, and `export_pdf`. Open document sources are also MCP resources. Pause MCP from Settings → General.
 
@@ -80,7 +80,7 @@ The renderer is sandboxed, with context isolation and no Node integration. Docum
 
 ## Build from source
 
-Use Node.js 22.12 or later on Windows x64. From this folder:
+Use Node.js 22.13 or later on Windows x64. From this folder:
 
 ```powershell
 npm ci
@@ -97,6 +97,8 @@ npm run dist:win
 ```
 
 Outputs are under `dist-packages/`. `package-lock.json` pins the dependency graph. The build bundles the renderer, PDF worker/assets, generated icon, and runtime dependency notices. `node_modules/`, generated renderer files, installers, caches, and screenshots are ignored by Git.
+
+`npm run dist:win` also builds `Inkline-MCP.exe` using Node's single-executable application support. It includes the helper and Node runtime in one console executable, with a separate Node license notice. The GUI and console helper are both included in the installer and ZIP. For development, `npm run mcp -- --automation-read-root C:\\MyProject` runs the same helper with the development runtime. `npm run format` formats the source.
 
 ## Tests and CI
 

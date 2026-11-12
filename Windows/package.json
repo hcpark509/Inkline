@@ -12,7 +12,11 @@
     "start": "npm run build && electron .",
     "test": "node --test tests/core.test.cjs",
     "test:desktop": "node tests/desktop.mjs",
-    "dist:win": "npm run build && electron-builder --win nsis zip --x64 --publish never"
+    "dist:win": "npm run build && npm run build:helper && electron-builder --win nsis zip --x64 --publish never",
+    "format": "prettier --write src renderer scripts tests package.json",
+    "format:check": "prettier --check src renderer scripts tests package.json",
+    "build:helper": "node scripts/build-helper.mjs",
+    "mcp": "node src/helper.cjs"
   },
   "dependencies": {
     "@codemirror/commands": "6.11.1",
@@ -32,19 +36,41 @@
     "electron": "45.3.1",
     "electron-builder": "26.18.0",
     "esbuild": "0.28.2",
-    "playwright": "1.65.0"
+    "playwright": "1.65.0",
+    "postject": "1.0.0-alpha.6",
+    "prettier": "3.10.0"
   },
   "build": {
     "appId": "com.inkline.editor.windows",
     "asar": true,
-    "directories": { "output": "dist-packages", "buildResources": "assets" },
-    "files": ["src/**/*", "dist/**/*", "package.json", "LICENSES/**/*"],
+    "directories": {
+      "output": "dist-packages",
+      "buildResources": "assets"
+    },
+    "files": [
+      "src/**/*",
+      "dist/**/*",
+      "package.json",
+      "LICENSES/**/*"
+    ],
     "extraResources": [
-      { "from": "../Resources/Welcome.md", "to": "Welcome.md" },
-      { "from": "../THIRD_PARTY_NOTICES.md", "to": "THIRD_PARTY_NOTICES.md" }
+      {
+        "from": "../Resources/Welcome.md",
+        "to": "Welcome.md"
+      },
+      {
+        "from": "../THIRD_PARTY_NOTICES.md",
+        "to": "THIRD_PARTY_NOTICES.md"
+      }
     ],
     "artifactName": "Inkline-${version}-Windows-${arch}.${ext}",
-    "win": { "target": ["nsis", "zip"], "icon": "assets/inkline.ico" },
+    "win": {
+      "target": [
+        "nsis",
+        "zip"
+      ],
+      "icon": "assets/inkline.ico"
+    },
     "nsis": {
       "oneClick": false,
       "perMachine": false,
@@ -55,9 +81,43 @@
       "artifactName": "Inkline-${version}-Windows-${arch}-Setup.exe"
     },
     "fileAssociations": [
-      { "ext": ["md", "markdown", "mdown", "mkd", "mkdn"], "name": "Markdown", "role": "Editor" },
-      { "ext": "tex", "name": "LaTeX", "role": "Editor" },
-      { "ext": ["html", "htm"], "name": "HTML", "role": "Editor" }
+      {
+        "ext": [
+          "md",
+          "markdown",
+          "mdown",
+          "mkd",
+          "mkdn"
+        ],
+        "name": "Markdown",
+        "role": "Editor"
+      },
+      {
+        "ext": "tex",
+        "name": "LaTeX",
+        "role": "Editor"
+      },
+      {
+        "ext": [
+          "html",
+          "htm"
+        ],
+        "name": "HTML",
+        "role": "Editor"
+      }
+    ],
+    "extraFiles": [
+      {
+        "from": "helper-build",
+        "to": ".",
+        "filter": [
+          "Inkline-MCP.exe",
+          "Inkline-MCP-LICENSE.txt"
+        ]
+      }
     ]
+  },
+  "engines": {
+    "node": ">=22.13.0"
   }
 }

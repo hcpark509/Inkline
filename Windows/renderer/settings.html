@@ -1,10 +1,126 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Inkline Settings</title><link rel="stylesheet" href="app.css"><script type="module" src="settings.js"></script></head><body class="settings-body">
-<header class="settings-heading"><h1>Settings</h1><p>Make a comfortable place to write.</p></header>
-<nav class="settings-tabs" aria-label="Settings sections"><button data-section="general" class="selected">General</button><button data-section="appearance">Appearance</button><button data-section="fonts">Fonts</button></nav>
-<main class="settings-content">
-<section id="general"><h2>Saving & editing</h2><label class="check"><input type="checkbox" data-setting="autosaveEnabled"> Automatically save changes</label><p class="help">Autosave writes files that already have a location. Save a new document once to choose its name and folder.</p><label class="setting-row">Save after idle <input type="number" min="1" max="60" data-setting="autosaveDelay"><span>seconds</span></label><label class="check"><input type="checkbox" data-setting="showLineNumbers"> Show line numbers</label><label class="setting-row">Extra line spacing <input type="number" min="0" max="16" data-setting="lineSpacing"><span>pixels</span></label><label class="setting-row">Default TeX engine <select data-setting="defaultLatexEngine"><option value="pdflatex">pdfLaTeX</option><option value="xelatex">XeLaTeX</option></select></label><label class="check"><input type="checkbox" data-setting="mcpEnabled"> Enable local MCP access</label><h2>Keyboard shortcuts</h2><p class="shortcut-help">Ctrl+Enter — Compile LaTeX<br>Ctrl+Alt+T — Insert table<br>Ctrl+Alt+I — Insert figure<br>Ctrl+1 / Ctrl+2 / Ctrl+3 — Source / Split / Preview<br>Ctrl+, — Settings</p></section>
-<section id="appearance" hidden><h2>Workspace appearance</h2><label class="setting-row">Color theme <select data-setting="theme"><option>Orchid</option><option>Ocean</option><option>Forest</option><option>Graphite</option></select></label><label class="setting-row">Appearance <select data-setting="appearance"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select></label><p class="help">Every theme has light and dark variants. Source colors and the Markdown preview update together.</p><div id="themeSamples" class="theme-samples"></div><p class="help">Markdown PDF exports use the selected theme’s light variant. HTML and LaTeX use the styling in their source.</p></section>
-<section id="fonts" hidden><h2>Typography</h2><label class="setting-row font-row">Source font <input list="fontFamilies" data-setting="sourceFont" aria-label="Source font family"><input type="number" min="9" max="48" data-setting="sourceFontSize" aria-label="Source font size"></label><label class="setting-row font-row">Markdown preview <input list="fontFamilies" data-setting="previewFont" aria-label="Preview font family"><input type="number" min="9" max="48" data-setting="previewFontSize" aria-label="Preview font size"></label><datalist id="fontFamilies"></datalist><p class="help">Choose a suggested family or type the name of another installed font. Preview fonts also apply to Markdown PDF exports. Set LaTeX fonts in its preamble.</p><h2>Your local font library</h2><button id="importFonts">Import Fonts…</button><p class="help">Import .ttf or .otf files. Inkline keeps its own copies for the source editor and Markdown preview; a system-wide installation is not required.</p><p id="importedFonts" class="font-list"></p></section>
-<p id="settingsStatus" role="status"></p>
-</main></body></html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Inkline Settings</title>
+    <link rel="stylesheet" href="app.css" />
+    <script type="module" src="settings.js"></script>
+  </head>
+  <body class="settings-body">
+    <header class="settings-heading">
+      <h1>Settings</h1>
+      <p>Make a comfortable place to write.</p>
+    </header>
+    <nav class="settings-tabs" aria-label="Settings sections">
+      <button data-section="general" class="selected">General</button
+      ><button data-section="appearance">Appearance</button
+      ><button data-section="fonts">Fonts</button>
+    </nav>
+    <main class="settings-content">
+      <section id="general">
+        <h2>Saving & editing</h2>
+        <label class="check"
+          ><input type="checkbox" data-setting="autosaveEnabled" /> Automatically save
+          changes</label
+        >
+        <p class="help">
+          Autosave writes files that already have a location. Save a new document once to choose its
+          name and folder.
+        </p>
+        <label class="setting-row"
+          >Save after idle
+          <input type="number" min="1" max="60" data-setting="autosaveDelay" /><span
+            >seconds</span
+          ></label
+        ><label class="check"
+          ><input type="checkbox" data-setting="showLineNumbers" /> Show line numbers</label
+        ><label class="setting-row"
+          >Extra line spacing
+          <input type="number" min="0" max="16" data-setting="lineSpacing" /><span
+            >pixels</span
+          ></label
+        ><label class="setting-row"
+          >Default TeX engine
+          <select data-setting="defaultLatexEngine">
+            <option value="pdflatex">pdfLaTeX</option>
+            <option value="xelatex">XeLaTeX</option>
+          </select></label
+        ><label class="check"
+          ><input type="checkbox" data-setting="mcpEnabled" /> Enable local MCP access</label
+        >
+        <h2>Keyboard shortcuts</h2>
+        <p class="shortcut-help">
+          Ctrl+Enter — Compile LaTeX<br />Ctrl+Alt+T — Insert table<br />Ctrl+Alt+I — Insert
+          figure<br />Ctrl+1 / Ctrl+2 / Ctrl+3 — Source / Split / Preview<br />Ctrl+, — Settings
+        </p>
+      </section>
+      <section id="appearance" hidden>
+        <h2>Workspace appearance</h2>
+        <label class="setting-row"
+          >Color theme
+          <select data-setting="theme">
+            <option>Orchid</option>
+            <option>Ocean</option>
+            <option>Forest</option>
+            <option>Graphite</option>
+          </select></label
+        ><label class="setting-row"
+          >Appearance
+          <select data-setting="appearance">
+            <option value="system">System</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select></label
+        >
+        <p class="help">
+          Every theme has light and dark variants. Source colors and the Markdown preview update
+          together.
+        </p>
+        <div id="themeSamples" class="theme-samples"></div>
+        <p class="help">
+          Markdown PDF exports use the selected theme’s light variant. HTML and LaTeX use the
+          styling in their source.
+        </p>
+      </section>
+      <section id="fonts" hidden>
+        <h2>Typography</h2>
+        <label class="setting-row font-row"
+          >Source font
+          <input
+            list="fontFamilies"
+            data-setting="sourceFont"
+            aria-label="Source font family" /><input
+            type="number"
+            min="9"
+            max="48"
+            data-setting="sourceFontSize"
+            aria-label="Source font size" /></label
+        ><label class="setting-row font-row"
+          >Markdown preview
+          <input
+            list="fontFamilies"
+            data-setting="previewFont"
+            aria-label="Preview font family" /><input
+            type="number"
+            min="9"
+            max="48"
+            data-setting="previewFontSize"
+            aria-label="Preview font size" /></label
+        ><datalist id="fontFamilies"></datalist>
+        <p class="help">
+          Choose a suggested family or type the name of another installed font. Preview fonts also
+          apply to Markdown PDF exports. Set LaTeX fonts in its preamble.
+        </p>
+        <h2>Your local font library</h2>
+        <button id="importFonts">Import Fonts…</button>
+        <p class="help">
+          Import .ttf or .otf files. Inkline keeps its own copies for the source editor and Markdown
+          preview; a system-wide installation is not required.
+        </p>
+        <p id="importedFonts" class="font-list"></p>
+      </section>
+      <p id="settingsStatus" role="status"></p>
+    </main>
+  </body>
+</html>

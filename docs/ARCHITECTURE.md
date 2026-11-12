@@ -1,5 +1,7 @@
 # Architecture
 
+This page describes the native **macOS** implementation. The separate [Windows implementation](../Windows/README.md) uses Electron, CodeMirror, a restricted main/preload/renderer interface, and a standalone console MCP helper over a local named pipe. Both editions implement the same document formats and twelve MCP tools.
+
 Inkline is a Swift/AppKit document application targeting macOS 13 and later. The app builds directly with the Xcode Command Line Tools; it has no Swift Package Manager, npm, or Python runtime dependency. Python is used only by the MCP regression script.
 
 ## Source map

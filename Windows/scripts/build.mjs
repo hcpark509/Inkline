@@ -1,23 +1,148 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import {fileURLToPath} from 'node:url';
-import {deflateSync} from 'node:zlib';
-import {build} from 'esbuild';
-const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
-await fs.mkdir(path.join(root,'dist'),{recursive:true});
-await build({entryPoints:[path.join(root,'renderer/editor.mjs'),path.join(root,'renderer/settings.mjs')],outdir:path.join(root,'dist'),entryNames:'[name]',bundle:true,format:'esm',platform:'browser',target:'chrome142',minify:true,legalComments:'eof'});
-for(const name of ['index.html','settings.html','app.css'])await fs.copyFile(path.join(root,'renderer',name),path.join(root,'dist',name));
-await fs.copyFile(path.join(root,'node_modules/pdfjs-dist/build/pdf.worker.min.mjs'),path.join(root,'dist/pdf.worker.min.mjs'));
-for(const folder of ['standard_fonts','cmaps','wasm'])await fs.cp(path.join(root,'node_modules/pdfjs-dist',folder),path.join(root,'dist',folder),{recursive:true});
-const seen=new Set(),notices=[];
-async function packageDir(name,from){let here=from;while(true){const candidate=path.join(here,'node_modules',name);try{await fs.access(path.join(candidate,'package.json'));return candidate;}catch{}const parent=path.dirname(here);if(parent===here)throw Error('Missing runtime package '+name);here=parent;}}
-async function license(name,from){const dir=await packageDir(name,from);if(seen.has(dir))return;seen.add(dir);const pkg=JSON.parse(await fs.readFile(path.join(dir,'package.json'),'utf8'));const files=(await fs.readdir(dir)).filter(n=>/^(licen[sc]e|copying|notice)(\.|$)/i.test(n));let text=`\n${'='.repeat(72)}\n${pkg.name} ${pkg.version}\nLicense: ${pkg.license||'See upstream notice'}\n`;
-for(const file of files){const p=path.join(dir,file);if((await fs.stat(p)).isFile())text+='\n'+file+'\n'+await fs.readFile(p,'utf8');}notices.push(text);for(const dep of Object.keys(pkg.dependencies||{}))await license(dep,dir);}
-const pkg=JSON.parse(await fs.readFile(path.join(root,'package.json'),'utf8'));for(const name of Object.keys(pkg.dependencies))await license(name,root);
-await fs.writeFile(path.join(root,'dist/THIRD_PARTY_LICENSES.txt'),'Inkline Windows — bundled runtime dependency notices\n'+notices.join('\n'));
-function crc32(buffer){let crc=0xffffffff;for(const b of buffer){crc^=b;for(let k=0;k<8;k++)crc=(crc>>>1)^((crc&1)?0xedb88320:0);}return (crc^0xffffffff)>>>0;}
-function chunk(type,data){const name=Buffer.from(type),head=Buffer.alloc(4),crc=Buffer.alloc(4);head.writeUInt32BE(data.length);crc.writeUInt32BE(crc32(Buffer.concat([name,data])));return Buffer.concat([head,name,data,crc]);}
-function pixel(x,y){const rounded=(x0,y0,x1,y1,r)=>{const cx=Math.max(x0+r,Math.min(x1-r,x)),cy=Math.max(y0+r,Math.min(y1-r,y));return x>=x0&&x<=x1&&y>=y0&&y<=y1&&(x-cx)**2+(y-cy)**2<=r*r;};if(!rounded(16,16,240,240,48))return [0,0,0,0];let color=[104-Math.floor(y/12),66-Math.floor(y/20),160-Math.floor(y/9),255];if(x>=82&&x<=178&&y>=62&&y<=194&&!(y<94&&x>145+(y-62)))color=[250,245,255,255];if(x>=145&&x<=178&&y>=62&&y<=95&&x<=145+(y-62))color=[220,201,244,255];for(const [line,width,c]of [[116,54,[121,80,182,255]],[139,62,[37,136,121,255]],[162,42,[175,90,53,255]]])if(rounded(101,line,101+width,line+8,4))color=c;return color;}
-function png(size){const scan=Buffer.alloc(size*(size*4+1));for(let y=0;y<size;y++){const off=y*(size*4+1);scan[off]=0;for(let x=0;x<size;x++){const sum=[0,0,0,0];for(let sy=0;sy<2;sy++)for(let sx=0;sx<2;sx++){const c=pixel((x+(sx+.5)/2)*256/size,(y+(sy+.5)/2)*256/size);for(let k=0;k<4;k++)sum[k]+=c[k];}for(let k=0;k<4;k++)scan[off+1+x*4+k]=Math.round(sum[k]/4);}}const ihdr=Buffer.alloc(13);ihdr.writeUInt32BE(size,0);ihdr.writeUInt32BE(size,4);ihdr[8]=8;ihdr[9]=6;return Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),chunk('IHDR',ihdr),chunk('IDAT',deflateSync(scan)),chunk('IEND',Buffer.alloc(0))]);}
-const sizes=[16,32,48,64,128,256],images=sizes.map(png),header=Buffer.alloc(6+16*sizes.length);header.writeUInt16LE(1,2);header.writeUInt16LE(sizes.length,4);let offset=header.length;for(let i=0;i<sizes.length;i++){const o=6+16*i;header[o]=sizes[i]===256?0:sizes[i];header[o+1]=header[o];header.writeUInt16LE(1,o+4);header.writeUInt16LE(32,o+6);header.writeUInt32LE(images[i].length,o+8);header.writeUInt32LE(offset,o+12);offset+=images[i].length;}await fs.mkdir(path.join(root,'assets'),{recursive:true});await fs.writeFile(path.join(root,'assets/inkline.ico'),Buffer.concat([header,...images]));await fs.writeFile(path.join(root,'dist/icon.png'),png(256));
+import { fileURLToPath } from 'node:url';
+import { deflateSync } from 'node:zlib';
+import { build } from 'esbuild';
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+await fs.mkdir(path.join(root, 'dist'), { recursive: true });
+await build({
+  entryPoints: [path.join(root, 'renderer/editor.mjs'), path.join(root, 'renderer/settings.mjs')],
+  outdir: path.join(root, 'dist'),
+  entryNames: '[name]',
+  bundle: true,
+  format: 'esm',
+  platform: 'browser',
+  target: 'chrome142',
+  minify: true,
+  legalComments: 'eof',
+});
+for (const name of ['index.html', 'settings.html', 'app.css'])
+  await fs.copyFile(path.join(root, 'renderer', name), path.join(root, 'dist', name));
+await fs.copyFile(
+  path.join(root, 'node_modules/pdfjs-dist/build/pdf.worker.min.mjs'),
+  path.join(root, 'dist/pdf.worker.min.mjs'),
+);
+for (const folder of ['standard_fonts', 'cmaps', 'wasm'])
+  await fs.cp(path.join(root, 'node_modules/pdfjs-dist', folder), path.join(root, 'dist', folder), {
+    recursive: true,
+  });
+const seen = new Set(),
+  notices = [];
+async function packageDir(name, from) {
+  let here = from;
+  while (true) {
+    const candidate = path.join(here, 'node_modules', name);
+    try {
+      await fs.access(path.join(candidate, 'package.json'));
+      return candidate;
+    } catch {}
+    const parent = path.dirname(here);
+    if (parent === here) throw Error('Missing runtime package ' + name);
+    here = parent;
+  }
+}
+async function license(name, from) {
+  const dir = await packageDir(name, from);
+  if (seen.has(dir)) return;
+  seen.add(dir);
+  const pkg = JSON.parse(await fs.readFile(path.join(dir, 'package.json'), 'utf8'));
+  const files = (await fs.readdir(dir)).filter((n) =>
+    /^(licen[sc]e|copying|notice)(\.|$)/i.test(n),
+  );
+  let text = `\n${'='.repeat(72)}\n${pkg.name} ${pkg.version}\nLicense: ${pkg.license || 'See upstream notice'}\n`;
+  for (const file of files) {
+    const p = path.join(dir, file);
+    if ((await fs.stat(p)).isFile()) text += '\n' + file + '\n' + (await fs.readFile(p, 'utf8'));
+  }
+  notices.push(text);
+  for (const dep of Object.keys(pkg.dependencies || {})) await license(dep, dir);
+}
+const pkg = JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8'));
+for (const name of Object.keys(pkg.dependencies)) await license(name, root);
+await fs.writeFile(
+  path.join(root, 'dist/THIRD_PARTY_LICENSES.txt'),
+  'Inkline Windows — bundled runtime dependency notices\n' + notices.join('\n'),
+);
+function crc32(buffer) {
+  let crc = 0xffffffff;
+  for (const b of buffer) {
+    crc ^= b;
+    for (let k = 0; k < 8; k++) crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+function chunk(type, data) {
+  const name = Buffer.from(type),
+    head = Buffer.alloc(4),
+    crc = Buffer.alloc(4);
+  head.writeUInt32BE(data.length);
+  crc.writeUInt32BE(crc32(Buffer.concat([name, data])));
+  return Buffer.concat([head, name, data, crc]);
+}
+function pixel(x, y) {
+  const rounded = (x0, y0, x1, y1, r) => {
+    const cx = Math.max(x0 + r, Math.min(x1 - r, x)),
+      cy = Math.max(y0 + r, Math.min(y1 - r, y));
+    return x >= x0 && x <= x1 && y >= y0 && y <= y1 && (x - cx) ** 2 + (y - cy) ** 2 <= r * r;
+  };
+  if (!rounded(16, 16, 240, 240, 48)) return [0, 0, 0, 0];
+  let color = [104 - Math.floor(y / 12), 66 - Math.floor(y / 20), 160 - Math.floor(y / 9), 255];
+  if (x >= 82 && x <= 178 && y >= 62 && y <= 194 && !(y < 94 && x > 145 + (y - 62)))
+    color = [250, 245, 255, 255];
+  if (x >= 145 && x <= 178 && y >= 62 && y <= 95 && x <= 145 + (y - 62))
+    color = [220, 201, 244, 255];
+  for (const [line, width, c] of [
+    [116, 54, [121, 80, 182, 255]],
+    [139, 62, [37, 136, 121, 255]],
+    [162, 42, [175, 90, 53, 255]],
+  ])
+    if (rounded(101, line, 101 + width, line + 8, 4)) color = c;
+  return color;
+}
+function png(size) {
+  const scan = Buffer.alloc(size * (size * 4 + 1));
+  for (let y = 0; y < size; y++) {
+    const off = y * (size * 4 + 1);
+    scan[off] = 0;
+    for (let x = 0; x < size; x++) {
+      const sum = [0, 0, 0, 0];
+      for (let sy = 0; sy < 2; sy++)
+        for (let sx = 0; sx < 2; sx++) {
+          const c = pixel(((x + (sx + 0.5) / 2) * 256) / size, ((y + (sy + 0.5) / 2) * 256) / size);
+          for (let k = 0; k < 4; k++) sum[k] += c[k];
+        }
+      for (let k = 0; k < 4; k++) scan[off + 1 + x * 4 + k] = Math.round(sum[k] / 4);
+    }
+  }
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(size, 0);
+  ihdr.writeUInt32BE(size, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 6;
+  return Buffer.concat([
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    chunk('IHDR', ihdr),
+    chunk('IDAT', deflateSync(scan)),
+    chunk('IEND', Buffer.alloc(0)),
+  ]);
+}
+const sizes = [16, 32, 48, 64, 128, 256],
+  images = sizes.map(png),
+  header = Buffer.alloc(6 + 16 * sizes.length);
+header.writeUInt16LE(1, 2);
+header.writeUInt16LE(sizes.length, 4);
+let offset = header.length;
+for (let i = 0; i < sizes.length; i++) {
+  const o = 6 + 16 * i;
+  header[o] = sizes[i] === 256 ? 0 : sizes[i];
+  header[o + 1] = header[o];
+  header.writeUInt16LE(1, o + 4);
+  header.writeUInt16LE(32, o + 6);
+  header.writeUInt32LE(images[i].length, o + 8);
+  header.writeUInt32LE(offset, o + 12);
+  offset += images[i].length;
+}
+await fs.mkdir(path.join(root, 'assets'), { recursive: true });
+await fs.writeFile(path.join(root, 'assets/inkline.ico'), Buffer.concat([header, ...images]));
+await fs.writeFile(path.join(root, 'dist/icon.png'), png(256));
 console.log('Built editor, PDF preview, local assets, dependency notices, and Windows icon.');
