@@ -1,12 +1,17 @@
 # Inkline
 
-Inkline is a macOS editor for Markdown, LaTeX, and HTML with syntax coloring and a split preview. It opens `.md`, `.markdown`, `.mdown`, `.mkd`, `.mkdn`, `.tex`, `.html`, and `.htm` files. New documents use UTF-8.
+Inkline is a Markdown, LaTeX, and HTML editor for **macOS and Windows**, with syntax coloring, split previews, PDF export, project folders, and a local MCP server. It opens `.md`, `.markdown`, `.mdown`, `.mkd`, `.mkdn`, `.tex`, `.html`, and `.htm` files. New documents use UTF-8.
 
 ## Download and install
 
-Download the app ZIP from [GitHub Releases](https://github.com/hcpark509/Inkline/releases/latest), unzip it, and drag **Inkline.app** into **Applications**. Quit an older copy before replacing it. Preferences and imported fonts are stored separately from the app bundle.
+| Platform | Download | Installation |
+| --- | --- | --- |
+| macOS, Apple silicon | [Mac release](https://github.com/hcpark509/Inkline/releases/tag/v1.4) | Unzip and drag **Inkline.app** into **Applications**. |
+| Windows, x64 | [Windows release](https://github.com/hcpark509/Inkline/releases/tag/windows-v1.4.0) | Run the **Setup.exe**, or extract the complete ZIP and run **Inkline.exe**. |
 
-The version 1.4 download requires **macOS 13 or later and Apple silicon (arm64)**. It is ad hoc signed and is not a notarized distribution. You can also [build from source](#build) for your Mac's architecture.
+Quit an older copy before replacing it. Preferences and imported fonts are stored separately from the application files. Keep the Windows ZIP's neighboring runtime files with `Inkline.exe`.
+
+The Mac version 1.4 requires **macOS 13 or later and Apple silicon (arm64)**. It is ad hoc signed and is not notarized. The Windows edition targets **Windows 10/11 x64** and is unsigned. See the [Windows guide](Windows/README.md) for Windows shortcuts, build instructions, and MCP configuration. The remaining usage guide describes the native Mac edition.
 
 Markdown and HTML editing, previews, and PDF export work without a TeX installation. LaTeX source editing also works without TeX; compiling a LaTeX PDF requires a separately installed `pdflatex` or `xelatex`. TeX engines and fonts imported by users are not bundled.
 
@@ -97,6 +102,8 @@ bash Scripts/test-workspace.sh
 ```
 
 ## Build
+
+The following commands build the native **macOS** app. For Windows, use the [Windows build guide](Windows/README.md#build-from-source). Its source and tests live in `Windows/`, alongside the existing Mac implementation in `Sources/`.
 
 On macOS 13 or later with the Xcode Command Line Tools installed, run these commands from the Inkline folder.
 

@@ -1,0 +1,82 @@
+name: Windows build and desktop tests
+
+on:
+  push:
+    branches: [main, 'codex/**']
+    paths: ['Windows/**', '.github/workflows/windows.yml', 'Resources/Welcome.md', 'THIRD_PARTY_NOTICES.md']
+  pull_request:
+    paths: ['Windows/**', '.github/workflows/windows.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 35
+    defaults:
+      run:
+        working-directory: Windows
+        shell: pwsh
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      INKLINE_REQUIRE_TEX: '1'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: Windows/package-lock.json
+      - name: Install dependencies and Electron
+        run: |
+          npm ci --no-audit --no-fund
+          npx install-electron --no
+      - uses: r-lib/actions/setup-tinytex@v2
+      - name: Ensure LaTeX test packages
+        run: |
+          tlmgr install amsmath graphics
+          pdflatex --version
+      - name: Core regression tests
+        run: npm test
+      - name: Build renderer and resources
+        run: npm run build
+      - name: Desktop, MCP, fonts, PDF, and LaTeX tests
+        run: npm run test:desktop
+      - name: Build Windows installer and ZIP
+        run: npm run dist:win
+      - name: Install and test the packaged app
+        run: |
+          $installer = Get-ChildItem dist-packages/*-Setup.exe | Select-Object -First 1
+          $install = Join-Path $env:RUNNER_TEMP 'Inkline-installed'
+          $process = Start-Process -FilePath $installer.FullName -ArgumentList @('/S', "/D=$install") -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "Installer exited with $($process.ExitCode)" }
+          $env:INKLINE_EXECUTABLE = Join-Path $install 'Inkline.exe'
+          if (!(Test-Path $env:INKLINE_EXECUTABLE)) { throw 'The installed executable is missing.' }
+          npm run test:desktop
+      - name: Compute release checksums
+        run: |
+          $files = Get-ChildItem dist-packages | Where-Object { $_.Extension -in '.exe', '.zip' }
+          $lines = $files | ForEach-Object { (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() + '  ' + $_.Name }
+          [System.IO.File]::WriteAllLines((Join-Path $PWD 'dist-packages/SHA256SUMS.txt'), $lines, [System.Text.UTF8Encoding]::new($false))
+      - uses: actions/upload-artifact@v7
+        with:
+          name: Inkline-Windows-x64
+          path: |
+            Windows/dist-packages/*-Setup.exe
+            Windows/dist-packages/*.zip
+            Windows/dist-packages/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: Windows-desktop-screenshots
+          path: Windows/test-results/
+          if-no-files-found: ignore
+          retention-days: 14

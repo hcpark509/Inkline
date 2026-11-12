@@ -10,6 +10,8 @@ Upstream project: https://github.com/markedjs/marked
 
 ## Platform frameworks and external software
 
+The Windows implementation in `Windows/` uses Electron/Chromium, CodeMirror, Marked, PDF.js, fontkit, and their runtime dependencies. Its lockfile records exact resolved versions. The Windows build collects the installed runtime dependency licenses into `dist/THIRD_PARTY_LICENSES.txt`, which is included in the app; Electron and Chromium notices accompany the packaged runtime. The native Mac renderer described above remains on its bundled Marked version.
+
 Inkline uses macOS frameworks including AppKit, WebKit, PDFKit, CoreText, CoreFoundation, and CryptoKit. It does not bundle a TeX distribution. LaTeX compilation uses an engine already installed on the user's Mac.
 
 Fonts imported through Settings remain in the user's private Inkline font library. Those fonts and the macOS Georgia font used by the native test suite are not redistributed in this repository or release archive.

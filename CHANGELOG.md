@@ -1,5 +1,14 @@
 # Changelog
 
+## [Windows 1.4.0] — 2026-11-12
+
+- Added a Windows implementation with Markdown, HTML, and LaTeX editing, previews, PDF export, autosave, keyboard shortcuts, all four color themes, editable table generation, project folders, private font imports, and a separate Settings window.
+- Added Windows named-pipe/stdio MCP integration with the twelve document tools, revision protection, Undo, resources, and configured read/write roots.
+- Added pinned dependencies, Windows installer and ZIP packaging, core and desktop regression suites, and a Windows CI workflow that tests the installed app.
+- Preserved the native Mac app and its existing v1.4 release.
+
+[Windows 1.4.0]: https://github.com/hcpark509/Inkline/releases/tag/windows-v1.4.0
+
 ## [1.4] — 2026-11-12
 
 First GitHub release of Inkline, including the complete Markdown, LaTeX, HTML, and MCP implementation.

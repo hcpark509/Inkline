@@ -1,0 +1,63 @@
+{
+  "name": "inkline-windows",
+  "productName": "Inkline",
+  "version": "1.4.0",
+  "description": "Markdown, LaTeX, and HTML editor with previews, PDF export, projects, themes, and MCP",
+  "author": "hcpark509",
+  "license": "UNLICENSED",
+  "private": true,
+  "main": "src/main.cjs",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "start": "npm run build && electron .",
+    "test": "node --test tests/core.test.cjs",
+    "test:desktop": "node tests/desktop.mjs",
+    "dist:win": "npm run build && electron-builder --win nsis zip --x64 --publish never"
+  },
+  "dependencies": {
+    "@codemirror/commands": "6.11.1",
+    "@codemirror/lang-html": "6.4.12",
+    "@codemirror/lang-markdown": "6.5.2",
+    "@codemirror/language": "6.13.1",
+    "@codemirror/legacy-modes": "6.5.5",
+    "@codemirror/search": "6.7.2",
+    "@codemirror/state": "6.7.6",
+    "@codemirror/view": "6.43.15",
+    "@lezer/highlight": "1.2.5",
+    "fontkit": "3.0.0",
+    "marked": "18.2.0",
+    "pdfjs-dist": "6.5.438"
+  },
+  "devDependencies": {
+    "electron": "45.3.1",
+    "electron-builder": "26.18.0",
+    "esbuild": "0.28.2",
+    "playwright": "1.65.0"
+  },
+  "build": {
+    "appId": "com.inkline.editor.windows",
+    "asar": true,
+    "directories": { "output": "dist-packages", "buildResources": "assets" },
+    "files": ["src/**/*", "dist/**/*", "package.json", "LICENSES/**/*"],
+    "extraResources": [
+      { "from": "../Resources/Welcome.md", "to": "Welcome.md" },
+      { "from": "../THIRD_PARTY_NOTICES.md", "to": "THIRD_PARTY_NOTICES.md" }
+    ],
+    "artifactName": "Inkline-${version}-Windows-${arch}.${ext}",
+    "win": { "target": ["nsis", "zip"], "icon": "assets/inkline.ico" },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "deleteAppDataOnUninstall": false,
+      "artifactName": "Inkline-${version}-Windows-${arch}-Setup.exe"
+    },
+    "fileAssociations": [
+      { "ext": ["md", "markdown", "mdown", "mkd", "mkdn"], "name": "Markdown", "role": "Editor" },
+      { "ext": "tex", "name": "LaTeX", "role": "Editor" },
+      { "ext": ["html", "htm"], "name": "HTML", "role": "Editor" }
+    ]
+  }
+}

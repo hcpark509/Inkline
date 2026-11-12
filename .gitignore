@@ -4,3 +4,8 @@ __pycache__/
 *.py[cod]
 xcuserdata/
 *.xcuserstate
+/Windows/node_modules/
+/Windows/dist/
+/Windows/dist-packages/
+/Windows/test-results/
+/Windows/assets/inkline.ico
