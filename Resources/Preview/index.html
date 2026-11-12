@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; script-src inkline-preview:; style-src inkline-preview: 'unsafe-inline'; img-src inkline-image: https: http:; font-src inkline-preview:; base-uri 'none'; form-action 'none'">
+  <title>Markdown Preview</title>
+  <link rel="stylesheet" href="preview.css">
+  <script defer src="marked.min.js"></script>
+  <script defer src="preview.js"></script>
+</head>
+<body>
+  <main>
+    <article id="document" class="markdown" aria-label="Rendered document" hidden></article>
+    <section id="empty" class="empty">
+      <div class="empty-icon" aria-hidden="true">
+        <svg width="26" height="26" viewBox="0 0 26 26" fill="none">
+          <path d="M6 3.5h9l5 5v14H6zM15 3.5v5h5M9 12h8m-8 4h8m-8 4h5"
+                stroke="currentColor" stroke-width="1.55" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <h1>Your page starts here</h1>
+      <p>Write Markdown in the source editor to see it take shape here.</p>
+      <div class="hint"><kbd># Heading</kbd><kbd>**Bold**</kbd><kbd>`Code`</kbd></div>
+    </section>
+  </main>
+</body>
+</html>
