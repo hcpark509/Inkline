@@ -19,7 +19,7 @@ Markdown and HTML editing, previews, and PDF export work without a TeX installat
 
 - Markdown, LaTeX, and HTML source editing with syntax colors and Source / Split / Preview layouts.
 - Live Markdown and static HTML previews; compiled LaTeX PDF preview and compile logs.
-- PDF export, optional autosave, native Undo/Redo, find, and formatting shortcuts.
+- PDF export and printing on A4 paper by default, optional autosave, native Undo/Redo, find, and formatting shortcuts.
 - Four color themes, each with light, dark, and system appearance options.
 - Dedicated settings window, separate source and preview fonts, and private `.ttf` / `.otf` imports.
 - Editable table generator for all three document formats and an Insert Figure command.
@@ -40,6 +40,7 @@ Double-click `build/Inkline.app` in Finder. The first launch opens a sample docu
 | ⌥⌘O | Open a project folder |
 | ⌘S | Save |
 | ⇧⌘E | Export PDF |
+| ⌘P | Print |
 | ⌘Return / ⇧⌘R | Recompile LaTeX |
 | ⌥⌘T | Insert a table |
 | ⌥⌘I | Insert a figure |
@@ -58,6 +59,16 @@ Fonts contains separate source and Markdown preview families and sizes. **Import
 
 Use **Insert → Table…** to choose up to 100 rows and 20 columns, enter cell values, choose a header row, and review the generated source before inserting. The generator supports Markdown, HTML, and LaTeX. **File → Export PDF** saves the rendered document as a PDF.
 
+## Paper size and printing
+
+Exported PDFs use **A4** paper unless the document states its own size:
+
+- **LaTeX** keeps a size set in the preamble, such as `\documentclass[letterpaper]{article}`, `\usepackage[a5paper]{geometry}`, `\geometry{paperwidth=…}`, KOMA-Script `paper=…`, or memoir stock sizes. Classes with their own page shape, such as `beamer` and `standalone`, keep it too. Otherwise Inkline passes `a4paper` to the document class. The PDF page size follows the size LaTeX lays out, whatever the TeX distribution's default paper is.
+- **HTML** keeps a CSS `@page { size: … }` rule, for example `letter landscape`, `A5`, or `8.5in 11in`. HTML exports are split into pages.
+- **Markdown** has no paper-size syntax, so its exports are always A4.
+
+**File → Print…** (⌘P) prints exactly what Export PDF produces. The macOS print panel opens with your default printer selected, and the paper set to the document's page size; you can still change either before printing.
+
 ## Projects and figures
 
 Choose **File → Open Project Folder…** to select a working folder. The sidebar shows its files and subfolders; double-click supported documents to open them. Use the refresh button after changes made outside Inkline. The selected project is remembered across launches. **File → Close Project** hides the sidebar.
@@ -66,13 +77,13 @@ Documents inside the project can reference figures and inputs elsewhere within i
 
 ## HTML
 
-Open an `.html` or `.htm` file, choose **File → New HTML Document**, or select **HTML** from the window’s format menu. The split preview renders the HTML and CSS as you edit. Keep linked stylesheets, fonts, and images within the selected project, or within the saved document’s folder when no project is selected. The preview uses local assets and leaves page scripts disabled. **File → Export PDF** captures the full rendered HTML page as a single PDF page.
+Open an `.html` or `.htm` file, choose **File → New HTML Document**, or select **HTML** from the window’s format menu. The split preview renders the HTML and CSS as you edit. Keep linked stylesheets, fonts, and images within the selected project, or within the saved document’s folder when no project is selected. The preview uses local assets and leaves page scripts disabled. **File → Export PDF** paginates the rendered page on A4, or on the size given by a CSS `@page { size: … }` rule.
 
 ## LaTeX
 
 Open a `.tex` file, choose **File → New LaTeX Document**, or use the format menu in the window. Changing the format of a saved document opens an untitled copy of its source in the selected format. Use the starter document to see the expected LaTeX structure.
 
-Pick pdfLaTeX or XeLaTeX and click **Recompile** or press **⌘Return** to build the PDF. Click **Log** for compiler messages. Inkline uses the TeX distribution installed on your Mac, such as MacTeX or TinyTeX. Saved files can reference inputs and images from their folder and the selected project root. The starter includes `graphicx` for figures. To change the typeset font, set it in your LaTeX preamble. XeLaTeX supports system fonts through the `fontspec` package.
+Unless the preamble states a paper size, LaTeX documents compile on A4. Pick pdfLaTeX or XeLaTeX and click **Recompile** or press **⌘Return** to build the PDF. Click **Log** for compiler messages. Inkline uses the TeX distribution installed on your Mac, such as MacTeX or TinyTeX. Saved files can reference inputs and images from their folder and the selected project root. The starter includes `graphicx` for figures. To change the typeset font, set it in your LaTeX preamble. XeLaTeX supports system fonts through the `fontspec` package.
 
 ## Codex and MCP
 

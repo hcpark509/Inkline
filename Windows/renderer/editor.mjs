@@ -443,6 +443,12 @@ async function run(command, id) {
         $('#notice').textContent = result.exported ? 'PDF export complete' : '';
         break;
       }
+      case 'print': {
+        $('#notice').textContent = 'Preparing to print…';
+        const result = await api.call('print', { documentId: active });
+        $('#notice').textContent = result.printed ? 'Sent to printer' : '';
+        break;
+      }
       case 'log':
         $('#compileLog').textContent = compileLog || 'Compile a LaTeX document to see its log.';
         $('#logDialog').showModal();
@@ -553,6 +559,40 @@ async function renderPDF(base64) {
     await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
   }
   await loading.destroy();
+}
+// Renders each PDF page to a PNG for printing. Sizes are in points.
+async function rasterizePDF(base64, dpi = 300) {
+  const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+  const loading = pdfjs.getDocument({
+    data: bytes,
+    isEvalSupported: false,
+    standardFontDataUrl: 'inkline://app/standard_fonts/',
+    cMapUrl: 'inkline://app/cmaps/',
+    cMapPacked: true,
+    wasmUrl: 'inkline://app/wasm/',
+  });
+  try {
+    const pdf = await loading.promise,
+      pages = [];
+    for (let index = 1; index <= pdf.numPages; index++) {
+      const page = await pdf.getPage(index),
+        size = page.getViewport({ scale: 1 }),
+        viewport = page.getViewport({ scale: dpi / 72 }),
+        canvas = document.createElement('canvas');
+      canvas.width = Math.ceil(viewport.width);
+      canvas.height = Math.ceil(viewport.height);
+      const context = canvas.getContext('2d');
+      context.fillStyle = '#fff';
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      await page.render({ canvasContext: context, viewport }).promise;
+      pages.push({ width: size.width, height: size.height, png: canvas.toDataURL('image/png') });
+      canvas.width = canvas.height = 0;
+      page.cleanup();
+    }
+    return pages;
+  } finally {
+    await loading.destroy();
+  }
 }
 let tableValues = new Map(),
   tableFormat = 'markdown';
@@ -682,6 +722,7 @@ $('#divider').onpointerdown = (event) => {
   };
 };
 api.onRequest(async (action, args) => {
+  if (action === 'rasterizePDF') return rasterizePDF(args.pdf, args.dpi);
   if (action === 'snapshot')
     return [...records.values()].map((r) => {
       const selection = r.state.selection.main;

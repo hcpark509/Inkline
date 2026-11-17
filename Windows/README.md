@@ -21,7 +21,8 @@ The prebuilt app targets Windows 10/11 x64. The runtime is included, so Node.js 
 | Markdown | Live rendering, tables, task lists, links, code, relative project images, and raw HTML displayed as text. |
 | HTML | Live HTML/CSS rendering with local project assets and authored page scripts disabled. |
 | LaTeX | pdfLaTeX or XeLaTeX compilation, a rendered PDF preview, and a compile log. |
-| PDF export | A4 Markdown/HTML exports and direct export of the compiled LaTeX PDF. |
+| PDF export | A4 by default. HTML keeps a CSS `@page { size: … }` rule, and LaTeX keeps a size stated in its preamble; otherwise it compiles with `a4paper`. |
+| Printing | **File → Print…** prints what Export PDF produces. The Windows print dialog opens on the default printer, with the paper set to the document's page size. |
 | Autosave | Opt-in, with an idle delay; untitled documents require a first manual save. External file changes are reported before replacing their contents. |
 | Themes | Orchid, Ocean, Forest, and Graphite, each with light, dark, and system appearance. |
 | Tables | Editable values, 1–100 rows, 1–20 columns, optional headers, and Markdown/HTML/LaTeX output. |
@@ -42,6 +43,7 @@ Markdown and HTML editing, rendering, and PDF export work offline apart from ref
 | Ctrl+Alt+O | Open project folder |
 | Ctrl+S / Ctrl+Shift+S | Save / Save As |
 | Ctrl+Shift+E | Export PDF |
+| Ctrl+P | Print |
 | Ctrl+Enter / Ctrl+Shift+R | Recompile LaTeX |
 | Ctrl+1 / Ctrl+2 / Ctrl+3 | Source / Split / Preview |
 | Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y | Undo / Redo |
@@ -111,7 +113,7 @@ npm run test:desktop
 
 The core suite checks Unicode/BOM encodings, CRLF preservation, autosave, concurrent saves, external changes, path/symlink boundaries, settings, all table formats, MCP revisions, resources, and local bridge authentication.
 
-The Playwright desktop suite launches an isolated app/profile. It exercises real editor input, native Undo after MCP edits, editable tables, light/dark themes, the settings window, native font import, autosave, project figures, HTML script isolation, all PDF exports, LaTeX preview, compilation shortcuts, and the stdio MCP helper. Without `INKLINE_REQUIRE_TEX=1`, the suite permits the documented missing-engine result; CI requires actual compilation.
+The Playwright desktop suite launches an isolated app/profile. It exercises real editor input, native Undo after MCP edits, editable tables, light/dark themes, the settings window, native font import, autosave, project figures, HTML script isolation, all PDF exports, A4 and CSS paper sizes, printing (the system dialog is replaced with a PDF capture), LaTeX preview, compilation shortcuts, and the stdio MCP helper. Without `INKLINE_REQUIRE_TEX=1`, the suite permits the documented missing-engine result; CI requires actual compilation.
 
 The [Windows workflow](../.github/workflows/windows.yml) runs on a Windows runner, installs TinyTeX for tests, builds the installer/ZIP, silently installs the installer, and runs the same desktop suite against the installed `Inkline.exe`. Successful builds upload installers, ZIPs, checksums, and diagnostic screenshots as workflow artifacts. No TeX installation is included in the app download.
 

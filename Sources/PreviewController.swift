@@ -4,7 +4,7 @@ import WebKit
 
 final class PreviewController: NSObject, WKNavigationDelegate {
     private static let page = URL(string: "inkline-preview://app/index.html")!
-    private static let pdfSize = CGSize(width: 595, height: 842)
+    private static let pdfSize = PaperSize.a4.size
     private let files = PreviewFiles()
     private let isExportRenderer: Bool
 
@@ -87,7 +87,8 @@ final class PreviewController: NSObject, WKNavigationDelegate {
         finishLoading(nil)
     }
 
-    func exportPDF(source: String, to url: URL, completion: @escaping (Error?) -> Void) {
+    /// Renders the Markdown as A4 PDF data with the light theme.
+    func renderPDF(source: String, completion: @escaping (Result<Data, Error>) -> Void) {
         let renderer = PreviewController(isExportRenderer: true)
         renderer.files.directory = files.directory
         renderer.files.projectRoot = files.projectRoot
@@ -96,18 +97,20 @@ final class PreviewController: NSObject, WKNavigationDelegate {
         renderer.whenLoaded = { [weak self, weak renderer] loadError in
             if let loadError {
                 self?.exportRenderer = nil
-                completion(loadError)
-            } else {
-                renderer?.savePaginatedPDF(to: url) { error in
+                completion(.failure(loadError))
+            } else if let renderer {
+                renderer.paginatedPDF { result in
                     self?.exportRenderer = nil
-                    completion(error)
+                    completion(result)
                 }
+            } else {
+                completion(.failure(CocoaError(.userCancelled)))
             }
         }
         _ = renderer.webView
     }
 
-    private func savePaginatedPDF(to url: URL, completion: @escaping (Error?) -> Void) {
+    private func paginatedPDF(completion: @escaping (Result<Data, Error>) -> Void) {
         webView.callAsyncJavaScript(
             "return await window.preparePDFExport(width, height)",
             arguments: ["width": Self.pdfSize.width, "height": Self.pdfSize.height], in: nil, in: .page,
@@ -120,10 +123,9 @@ final class PreviewController: NSObject, WKNavigationDelegate {
                         }
                         let pdf = try await self.capturePages(count)
                         guard let data = pdf.dataRepresentation() else { throw CocoaError(.fileWriteUnknown) }
-                        try data.write(to: url, options: .atomic)
-                        completion(nil)
+                        completion(.success(data))
                     } catch {
-                        completion(error)
+                        completion(.failure(error))
                     }
                 }
             }

@@ -11,6 +11,7 @@ const {
 } = require('electron');
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const os = require('node:os');
 const { pathToFileURL } = require('node:url');
 const { randomUUID } = require('node:crypto');
 const {
@@ -24,6 +25,7 @@ const {
 } = require('./documents.cjs');
 const { extensions, starters, validSettings } = require('./shared.cjs');
 const { compileLatex } = require('./latex.cjs');
+const { A4, firstPageSize, printPageSize } = require('./paper.cjs');
 const mcp = require('./mcp.cjs');
 const appRoot = path.resolve(__dirname, '..');
 const argv = process.argv.slice(1),
@@ -121,7 +123,7 @@ function trusted(event, settings = true) {
     (event.sender === mainWindow?.webContents || event.sender === settingsWindow?.webContents)
   );
 }
-function rpc(action, args = {}) {
+function rpc(action, args = {}, timeout = 15000) {
   return new Promise((resolve, reject) => {
     if (!mainWindow || mainWindow.isDestroyed()) {
       reject(Error('The editor window is closed.'));
@@ -131,7 +133,7 @@ function rpc(action, args = {}) {
     const timer = setTimeout(() => {
       pending.delete(id);
       reject(Error('The editor did not respond.'));
-    }, 15000);
+    }, timeout);
     pending.set(id, { resolve, reject, timer });
     mainWindow.webContents.send('inkline:request', { id, action, args });
   });
@@ -293,6 +295,7 @@ function makeMenu() {
         item('Save', 'save', cmd + '+S'),
         item('Save As…', 'save-as', cmd + '+Shift+S'),
         item('Export PDF…', 'export', cmd + '+Shift+E'),
+        item('Print…', 'print', cmd + '+P'),
         { type: 'separator' },
         item('Close Document', 'close', cmd + '+W'),
         { role: 'quit' },
@@ -498,6 +501,93 @@ async function compile(doc) {
     compiling.delete(doc.id);
   }
 }
+// A4 unless the page's CSS sets @page { size: … }. Margins are in inches.
+const pdfOptions = {
+  pageSize: 'A4',
+  printBackground: true,
+  preferCSSPageSize: true,
+  margins: { top: 0.4, bottom: 0.4, left: 0.45, right: 0.45 },
+};
+// The same margins in CSS pixels, as webContents.print expects.
+const printMargins = { marginType: 'custom', top: 38, bottom: 38, left: 43, right: 43 };
+async function renderedDocument(doc) {
+  const win = secureWindow({
+    width: 794,
+    height: 1123,
+    show: false,
+    webPreferences: { preload: undefined, javascript: false },
+  });
+  try {
+    if (doc.format === 'html') await win.loadURL(previewURL(doc));
+    else {
+      const html = await rpc('exportHTML', { documentId: doc.id });
+      await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
+    }
+    await win.webContents
+      .executeJavaScript(
+        'Promise.race([Promise.allSettled([document.fonts.ready, ...Array.from(document.images, i => i.decode())]), new Promise(r => setTimeout(r, 6000))])',
+      )
+      .catch(() => {});
+    return win;
+  } catch (e) {
+    win.destroy();
+    throw e;
+  }
+}
+// Prints what Export PDF would produce. The system print dialog opens on the default printer.
+async function printDocument(doc) {
+  const expected = revision(doc);
+  let win, folder, pageSize, margins;
+  try {
+    if (doc.format === 'latex') {
+      const result = await compile(doc);
+      store.check(doc, expected);
+      const pages = await rpc('rasterizePDF', { pdf: result.pdf.toString('base64') }, 180000);
+      if (!pages?.length) throw Error('The compiled PDF has no pages.');
+      folder = await fs.mkdtemp(path.join(os.tmpdir(), 'inkline-print-'));
+      for (const [index, page] of pages.entries())
+        await fs.writeFile(
+          path.join(folder, `page-${index + 1}.png`),
+          Buffer.from(page.png.replace(/^data:image\/png;base64,/, ''), 'base64'),
+        );
+      const { width, height } = pages[0];
+      const html =
+        '<!doctype html><meta charset="utf-8"><title>Print</title><style>' +
+        `@page{size:${width}pt ${height}pt;margin:0}html,body{margin:0}` +
+        `img{display:block;width:${width}pt;height:${height}pt;object-fit:contain;break-after:page}` +
+        'img:last-child{break-after:auto}</style>' +
+        pages.map((_, index) => `<img src="page-${index + 1}.png" alt="">`).join('');
+      await fs.writeFile(path.join(folder, 'print.html'), html, 'utf8');
+      win = secureWindow({
+        width: 794,
+        height: 1123,
+        show: false,
+        webPreferences: { preload: undefined, javascript: false },
+      });
+      await win.loadFile(path.join(folder, 'print.html'));
+      pageSize = printPageSize({ width, height });
+      margins = { marginType: 'none' };
+    } else {
+      win = await renderedDocument(doc);
+      const size = firstPageSize(await win.webContents.printToPDF(pdfOptions)) || A4;
+      store.check(doc, expected);
+      pageSize = printPageSize(size);
+      margins = printMargins;
+    }
+    return await new Promise((resolve, reject) =>
+      win.webContents.print(
+        { silent: false, printBackground: true, pageSize, margins },
+        (success, reason) => {
+          if (success || /cancel/i.test(reason || '')) resolve(success);
+          else reject(Error('Printing failed: ' + (reason || 'unknown error')));
+        },
+      ),
+    );
+  } finally {
+    win?.destroy();
+    if (folder) await fs.rm(folder, { recursive: true, force: true }).catch(() => {});
+  }
+}
 async function exportPDF(doc, file, overwrite = false, expected = revision(doc)) {
   file = await canonical(file, true);
   if (path.extname(file).toLowerCase() !== '.pdf') throw Error('Use a .pdf filename.');
@@ -515,29 +605,9 @@ async function exportPDF(doc, file, overwrite = false, expected = revision(doc))
     store.check(doc, expected);
     data = result.pdf;
   } else {
-    const win = secureWindow({
-      width: 794,
-      height: 1123,
-      show: false,
-      webPreferences: { preload: undefined, javascript: false },
-    });
+    const win = await renderedDocument(doc);
     try {
-      if (doc.format === 'html') await win.loadURL(previewURL(doc));
-      else {
-        const html = await rpc('exportHTML', { documentId: doc.id });
-        await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
-      }
-      await win.webContents
-        .executeJavaScript(
-          'Promise.race([Promise.allSettled([document.fonts.ready, ...Array.from(document.images, i => i.decode())]), new Promise(r => setTimeout(r, 6000))])',
-        )
-        .catch(() => {});
-      data = await win.webContents.printToPDF({
-        pageSize: 'A4',
-        printBackground: true,
-        preferCSSPageSize: true,
-        margins: { top: 0.4, bottom: 0.4, left: 0.45, right: 0.45 },
-      });
+      data = await win.webContents.printToPDF(pdfOptions);
       store.check(doc, expected);
     } finally {
       win.destroy();
@@ -656,6 +726,8 @@ async function invoke(method, a = {}) {
       if (!picked.canceled) await exportPDF(doc, picked.filePath, true);
       return { exported: !picked.canceled };
     }
+    case 'print':
+      return { printed: await printDocument(doc) };
     case 'figure': {
       const base = doc.path ? path.dirname(doc.path) : store.projectFor(doc);
       if (!base) throw Error('Save the document or open a project before inserting figures.');
@@ -809,4 +881,11 @@ if (helperAt >= 0 && process.platform === 'win32') {
     server?.close();
   });
 }
-module.exports = { getStore: () => store, invoke, exportPDF, importFonts, previewURL };
+module.exports = {
+  getStore: () => store,
+  invoke,
+  exportPDF,
+  printDocument,
+  importFonts,
+  previewURL,
+};

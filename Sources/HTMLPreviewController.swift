@@ -1,4 +1,5 @@
 import AppKit
+import PDFKit
 import UniformTypeIdentifiers
 import WebKit
 
@@ -135,27 +136,31 @@ final class HTMLPreviewController: NSObject, WKNavigationDelegate {
         action?(error)
     }
 
-    func exportPDF(source: String, documentURL: URL?, projectRoot: URL? = nil, to url: URL, completion: @escaping (Error?) -> Void) {
-        let renderer = HTMLPreviewController(frame: NSRect(x: 0, y: 0, width: 794, height: 1123))
+    /// Margins in points, matching the Windows edition's 0.4 in (top/bottom) and 0.45 in (sides).
+    private static let margins = NSEdgeInsets(top: 28.8, left: 32.4, bottom: 28.8, right: 32.4)
+
+    /// Renders the HTML as paginated PDF data. Pages are A4 unless the page's CSS sets `@page { size: … }`.
+    func renderPDF(source: String, documentURL: URL?, projectRoot: URL? = nil,
+                   completion: @escaping (Result<Data, Error>) -> Void) {
+        let renderer = HTMLPreviewController(frame: NSRect(origin: .zero, size: PaperSize.a4.size))
         exportRenderer = renderer
         renderer.whenLoaded = { [weak self, weak renderer] error in
             Task { @MainActor in
                 defer { self?.exportRenderer = nil }
                 do {
                     if let error { throw error }
-                    guard let renderer else { return }
-                    try await renderer.savePDF(to: url)
-                    completion(nil)
+                    guard let renderer else { throw CocoaError(.userCancelled) }
+                    completion(.success(try await renderer.paginatedPDF()))
                 } catch {
-                    completion(error)
+                    completion(.failure(error))
                 }
             }
         }
         renderer.render(source, documentURL: documentURL, projectRoot: projectRoot)
     }
 
-    @MainActor private func savePDF(to url: URL) async throws {
-        let dimensions: [Double] = try await withCheckedThrowingContinuation { continuation in
+    @MainActor private func paginatedPDF() async throws -> Data {
+        let declared: String = try await withCheckedThrowingContinuation { continuation in
             webView.callAsyncJavaScript(
                 """
                 const images = Array.from(document.images, image => {
@@ -166,23 +171,81 @@ final class HTMLPreviewController: NSObject, WKNavigationDelegate {
                     Promise.allSettled([document.fonts.ready, ...images]),
                     new Promise(resolve => setTimeout(resolve, 6000))
                 ]);
-                return [document.documentElement.scrollWidth, document.documentElement.scrollHeight];
+                const rules = [];
+                const screenOnly = rule => rule instanceof CSSMediaRule
+                    && !/print|all/i.test(rule.media.mediaText) && /screen/i.test(rule.media.mediaText);
+                const collect = list => {
+                    for (const rule of list) {
+                        if (rule instanceof CSSPageRule) {
+                            if (!rule.selectorText) rules.push(rule);
+                        } else if (rule.cssRules && !screenOnly(rule)) {
+                            collect(rule.cssRules);
+                        }
+                    }
+                };
+                for (const sheet of document.styleSheets) {
+                    try { collect(sheet.cssRules); } catch {}
+                }
+                return rules.map(rule => rule.style.getPropertyValue("size")).filter(Boolean).pop() || "";
                 """,
                 arguments: [:], in: nil, in: .defaultClient, completionHandler: { result in
-                    continuation.resume(with: result.flatMap { value in
-                        guard let size = value as? [Double], size.count == 2 else {
-                            return .failure(CocoaError(.fileWriteUnknown))
-                        }
-                        return .success(size)
-                    })
+                    continuation.resume(with: result.map { $0 as? String ?? "" })
                 }
             )
         }
-        let configuration = WKPDFConfiguration()
-        configuration.rect = CGRect(x: 0, y: 0, width: max(frame.width, dimensions[0]),
-                                    height: max(frame.height, dimensions[1]))
-        let pdf = try await webView.pdf(configuration: configuration)
-        try pdf.write(to: url, options: .atomic)
+        let paper = PaperSize.css(declared) ?? .a4
+        let output = FileManager.default.temporaryDirectory
+            .appendingPathComponent("inkline-html-\(UUID().uuidString).pdf")
+        defer { try? FileManager.default.removeItem(at: output) }
+        let info = NSPrintInfo()
+        info.paperSize = paper.size
+        info.topMargin = Self.margins.top
+        info.bottomMargin = Self.margins.bottom
+        info.leftMargin = Self.margins.left
+        info.rightMargin = Self.margins.right
+        info.horizontalPagination = .automatic
+        info.verticalPagination = .automatic
+        info.isHorizontallyCentered = false
+        info.isVerticallyCentered = false
+        info.jobDisposition = .save
+        info.dictionary()[NSPrintInfo.AttributeKey.jobSavingURL] = output
+        let operation = webView.printOperation(with: info)
+        operation.showsPrintPanel = false
+        operation.showsProgressPanel = false
+        operation.view?.frame = webView.bounds
+        // WebKit prints asynchronously, so the operation runs modally for an offscreen window.
+        let window = NSWindow(contentRect: webView.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = webView
+        defer { window.contentView = nil }
+        let succeeded = await withCheckedContinuation { continuation in
+            PrintCompletion.run(operation, for: window) { continuation.resume(returning: $0) }
+        }
+        guard succeeded, let data = try? Data(contentsOf: output), PDFDocument(data: data)?.pageCount ?? 0 > 0 else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+        return data
+    }
+}
+
+/// Bridges NSPrintOperation's Objective-C completion selector to a closure.
+final class PrintCompletion: NSObject {
+    private static var running: Set<PrintCompletion> = []
+    private let completion: (Bool) -> Void
+
+    private init(_ completion: @escaping (Bool) -> Void) { self.completion = completion }
+
+    static func run(_ operation: NSPrintOperation, for window: NSWindow, completion: @escaping (Bool) -> Void) {
+        let handler = PrintCompletion(completion)
+        running.insert(handler)
+        operation.runModal(for: window, delegate: handler,
+                           didRun: #selector(printOperationDidRun(_:success:contextInfo:)), contextInfo: nil)
+    }
+
+    @objc private func printOperationDidRun(_ operation: NSPrintOperation, success: Bool,
+                                            contextInfo: UnsafeMutableRawPointer?) {
+        Self.running.remove(self)
+        completion(success)
     }
 }
 
