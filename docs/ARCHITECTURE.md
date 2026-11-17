@@ -14,7 +14,8 @@ Inkline is a Swift/AppKit document application targeting macOS 13 and later. The
 | `WorkspaceController.swift` | Editor/preview layouts, document format, formatting actions, figures, tables, compilation, and export orchestration. |
 | `EditorView.swift` | Plain-text editor, line ruler, syntax highlighting, and palette roles. |
 | `PreviewController.swift` | Markdown WebKit view, bundled resource handlers, project images, preview fonts/themes, and paginated PDF export. |
-| `HTMLPreviewController.swift` | Static HTML rendering, local assets, and full-page HTML PDF export. |
+| `HTMLPreviewController.swift` | Static HTML rendering, local assets, and paginated HTML PDF export. |
+| `PaperSize.swift` | A4 default, CSS `@page` size parsing, and the LaTeX paper-size prefix. |
 | `LatexCompiler.swift` | Engine discovery, temporary build directories, project inputs, compiler deadlines, and logs. |
 | `AppPreferences.swift` | Persistent preferences, appearance, and light/dark theme palettes. |
 | `FontPreferences.swift`, `LocalFonts.swift` | Source/preview typefaces, app-private font copies, CoreText registration, and preview font assets. |
@@ -38,8 +39,9 @@ The selected project folder is stored as a bookmark. Saved documents inside that
 - Markdown uses the bundled Marked parser in a nonpersistent `WKWebView`. Raw HTML in Markdown is escaped. Local images use a restricted resource handler; remote HTTP(S) images can load when referenced.
 - Imported font assets are served from the preview's own custom URL scheme. Font files are copied under `Application Support/<bundle identifier>/Fonts` and registered with CoreText for the app process.
 - Markdown PDF export uses a dedicated light-theme renderer and paginates at A4 size.
-- HTML uses a separate WebKit configuration with page scripts disabled. Its export captures the rendered HTML page as a single PDF page.
-- LaTeX invokes `pdflatex` or `xelatex` for two passes in a temporary directory, with shell escape disabled and a 45-second compile deadline. The document directory and project root are added to `TEXINPUTS`. Its output is displayed with PDFKit and exported as the compiled PDF.
+- HTML uses a separate WebKit configuration with page scripts disabled. Its export runs a WebKit print operation into a PDF file, paginated on A4 or on the size from a CSS `@page { size: … }` rule read through the CSSOM.
+- LaTeX invokes `pdflatex` or `xelatex` for two passes in a temporary directory, with shell escape disabled and a 45-second compile deadline. The document directory and project root are added to `TEXINPUTS`. Its output is displayed with PDFKit and exported as the compiled PDF. Before compiling, `LatexPaper.prepare` adds a prefix to the first line, so compiler line numbers are unchanged. The prefix passes `a4paper` to the document class unless the preamble states a size, and at `\begin{document}` it sets `\pdfpagewidth`/`\pdfpageheight` from `\paperwidth`/`\paperheight`, unless a package or the document has already changed them.
+- **Print** renders the same PDF as export and prints it through `PDFDocument.printOperation`. The print panel opens as a sheet on a fresh `NSPrintInfo`, so it starts on the system's default printer, with the paper set to the PDF's first page.
 
 ## MCP integration
 

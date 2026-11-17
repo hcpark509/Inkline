@@ -323,3 +323,87 @@ test('Markdown preview escapes HTML, rejects executable links, and supplies uniq
   assert.ok(!output.includes('href="javascript:'));
   assert.ok(output.includes('inkline://asset/test/'));
 });
+
+test('A4 is the default paper unless a LaTeX source states its own size', () => {
+  const {
+    statesPaperSize,
+    prepareLatex,
+    firstPageSize,
+    pointsToMicrons,
+    A4,
+  } = require('../src/paper.cjs');
+  const body = '\n\\begin{document}x\\end{document}\n';
+  for (const source of [
+    '\\documentclass[letterpaper]{article}',
+    '\\documentclass[a5paper,11pt]{article}',
+    '\\documentclass{scrartcl}\\KOMAoptions{paper=letter}',
+    '\\documentclass{beamer}',
+    '\\documentclass{article}\n\\usepackage[margin=1in, paper=legalpaper]{geometry}',
+    '\\documentclass{article}\\geometry{paperwidth=5in,paperheight=7in}',
+    '\\documentclass{memoir}\\setstocksize{9in}{6in}',
+  ])
+    assert.ok(statesPaperSize(source + body), source);
+  for (const source of [
+    '\\documentclass[11pt]{article}',
+    '% \\documentclass[letterpaper]{article}\n\\documentclass{report}',
+    '\\documentclass{article}\n\\begin{document}\nletterpaper \\paperwidth=1in\n',
+  ])
+    assert.ok(!statesPaperSize(source), source);
+  assert.ok(
+    prepareLatex('\\documentclass{report}\nx').startsWith('\\PassOptionsToClass{a4paper}{report}'),
+  );
+  assert.ok(!prepareLatex('\\documentclass[letterpaper]{report}\n').includes('a4paper'));
+  assert.equal(prepareLatex('\\documentclass{report}\nx').split('\n').length, 2);
+  assert.deepEqual(firstPageSize(Buffer.from('<< /MediaBox [0 0 612 792] >>')), {
+    width: 612,
+    height: 792,
+  });
+  assert.equal(firstPageSize(Buffer.from('no pages')), null);
+  assert.equal(pointsToMicrons(A4.width), 210000);
+  assert.equal(pointsToMicrons(A4.height), 297000);
+  const { printPageSize } = require('../src/paper.cjs');
+  assert.deepEqual(printPageSize({ width: 594.96, height: 841.92 }), {
+    width: 210000,
+    height: 297000,
+  });
+  assert.deepEqual(printPageSize({ width: 792, height: 612 }), { width: 279400, height: 215900 });
+  assert.deepEqual(printPageSize({ width: 360, height: 504 }), { width: 127000, height: 177800 });
+});
+
+test(
+  'LaTeX compiles on A4 by default and keeps stated sizes',
+  { skip: !process.env.INKLINE_REQUIRE_TEX && 'set INKLINE_REQUIRE_TEX=1' },
+  async () => {
+    const { compileLatex } = require('../src/latex.cjs');
+    const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+    const pageSize = async (source, engine) => {
+      const { pdf } = await compileLatex({ source, engine });
+      const task = pdfjs.getDocument({ data: new Uint8Array(pdf), isEvalSupported: false });
+      const page = await (await task.promise).getPage(1);
+      const { width, height } = page.getViewport({ scale: 1 });
+      await task.destroy();
+      return [Math.round(width), Math.round(height)];
+    };
+    const body = '\n\\begin{document}\nPaper\n\\end{document}\n';
+    for (const engine of ['pdflatex', 'xelatex']) {
+      assert.deepEqual(await pageSize('\\documentclass{article}' + body, engine), [595, 842]);
+      assert.deepEqual(
+        await pageSize('\\documentclass[letterpaper]{article}' + body, engine),
+        [612, 792],
+      );
+      assert.deepEqual(
+        await pageSize(
+          '\\documentclass{article}\\usepackage[paperwidth=5in,paperheight=7in]{geometry}' + body,
+          engine,
+        ),
+        [360, 504],
+      );
+    }
+    await assert.rejects(
+      compileLatex({
+        source: '\\documentclass{article}\n\\begin{document}\n\\undefinedmacro\n\\end{document}\n',
+      }),
+      /document\.tex:3:/,
+    );
+  },
+);

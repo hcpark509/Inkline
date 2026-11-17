@@ -21,6 +21,9 @@ final class WorkspaceController: NSViewController, NSTextViewDelegate, NSUserInt
     private var sourceFraction: CGFloat = 0.5
     private var refreshTask: DispatchWorkItem?
     private var isExporting = false
+    private var outputStatus = "Exporting PDF…"
+    /// The print job whose panel is open, if any.
+    private(set) var activePrintOperation: NSPrintOperation?
     private var isCompiling = false
     private var compiledInput: LatexInput?
     private var compileLog = ""
@@ -727,7 +730,7 @@ final class WorkspaceController: NSViewController, NSTextViewDelegate, NSUserInt
         logButton.isEnabled = !compileLog.isEmpty && !isExporting
         compileStatus.toolTip = compileMessage.isEmpty ? nil : compileMessage
         if !isLatex {
-            compileStatus.stringValue = "Exporting PDF…"
+            compileStatus.stringValue = outputStatus
         } else if isCompiling {
             compileStatus.stringValue = "Compiling…"
             previewMessage.stringValue = "Building with \(engine.title)…"
@@ -830,23 +833,94 @@ final class WorkspaceController: NSViewController, NSTextViewDelegate, NSUserInt
     }
 
     private func writePDF(to url: URL, latex: Data?, completion: @escaping (Error?) -> Void) {
-        if let latex {
+        let write: (Data) -> Void = { data in
             do {
-                try latex.write(to: url, options: .atomic)
+                try data.write(to: url, options: .atomic)
                 completion(nil)
             } catch {
                 completion(error)
             }
-        } else if format == .html {
-            htmlPreview.exportPDF(source: textView.string, documentURL: document?.fileURL, projectRoot: document?.projectRoot,
-                                  to: url, completion: completion)
+        }
+        if let latex {
+            write(latex)
+            return
+        }
+        renderDocumentPDF { result in
+            switch result {
+            case .success(let data): write(data)
+            case .failure(let error): completion(error)
+            }
+        }
+    }
+
+    /// Renders Markdown or HTML to the same paginated PDF used for export and printing.
+    private func renderDocumentPDF(completion: @escaping (Result<Data, Error>) -> Void) {
+        if format == .html {
+            htmlPreview.renderPDF(source: textView.string, documentURL: document?.fileURL,
+                                  projectRoot: document?.projectRoot, completion: completion)
         } else {
-            preview.exportPDF(source: textView.string, to: url, completion: completion)
+            preview.renderPDF(source: textView.string, completion: completion)
+        }
+    }
+
+    /// Prints the exported PDF through the system print panel, which starts on the default printer.
+    @objc func printDocument(_ sender: Any?) {
+        guard !isExporting, !isCompiling, let window = view.window else { return }
+        isExporting = true
+        outputStatus = "Preparing to print…"
+        updateLatexStatus()
+        let present: (Result<Data, Error>) -> Void = { [weak self, weak window] result in
+            guard let self, let window else { return }
+            switch result {
+            case .success(let data):
+                guard let pdf = PDFDocument(data: data), let page = pdf.page(at: 0) else {
+                    self.finishExport(error: CocoaError(.fileReadCorruptFile))
+                    return
+                }
+                let info = NSPrintInfo()
+                let bounds = page.bounds(for: .mediaBox)
+                info.orientation = bounds.width > bounds.height ? .landscape : .portrait
+                info.paperSize = bounds.size
+                info.topMargin = 0
+                info.bottomMargin = 0
+                info.leftMargin = 0
+                info.rightMargin = 0
+                info.isHorizontallyCentered = true
+                info.isVerticallyCentered = true
+                guard let operation = pdf.printOperation(for: info, scalingMode: .pageScaleDownToFit, autoRotate: true) else {
+                    self.finishExport(error: CocoaError(.featureUnsupported))
+                    return
+                }
+                operation.jobTitle = self.document?.displayName ?? "Inkline"
+                operation.showsPrintPanel = true
+                operation.showsProgressPanel = true
+                self.activePrintOperation = operation
+                PrintCompletion.run(operation, for: window) { [weak self] _ in
+                    self?.activePrintOperation = nil
+                    self?.finishExport(error: nil)
+                }
+            case .failure(let error):
+                self.finishExport(error: error)
+            }
+        }
+        if format == .latex {
+            compileLatex { [weak self] data in
+                guard let self else { return }
+                if let data {
+                    present(.success(data))
+                } else {
+                    present(.failure(AutomationError(message: self.compileMessage.isEmpty
+                        ? "The source changed during compilation. Print again to use the latest text." : self.compileMessage)))
+                }
+            }
+        } else {
+            renderDocumentPDF(completion: present)
         }
     }
 
     private func finishExport(error: Error?) {
         isExporting = false
+        outputStatus = "Exporting PDF…"
         updateLatexStatus()
         if let error { presentError(error) }
     }
@@ -857,7 +931,7 @@ final class WorkspaceController: NSViewController, NSTextViewDelegate, NSUserInt
             return format == .latex && !isCompiling && !isExporting
         case #selector(showCompileLog(_:)):
             return format == .latex && !compileLog.isEmpty && !isExporting
-        case #selector(exportPDF(_:)):
+        case #selector(exportPDF(_:)), #selector(printDocument(_:)):
             return !isCompiling && !isExporting
         case #selector(choosePreviewFont(_:)):
             return format == .markdown

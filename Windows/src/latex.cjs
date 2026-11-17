@@ -3,6 +3,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
 const { spawn } = require('node:child_process');
+const { prepareLatex } = require('./paper.cjs');
 async function findEngine(engine, environment = process.env) {
   if (!['pdflatex', 'xelatex'].includes(engine)) throw Error('Choose pdfLaTeX or XeLaTeX.');
   const extra =
@@ -49,7 +50,7 @@ async function compileLatex({ source, file, projectRoot, engine = 'pdflatex' }) 
     throw Error(engine + ' is unavailable. Install MiKTeX or TeX Live, then recompile.');
   const work = await fs.mkdtemp(path.join(os.tmpdir(), 'inkline-tex-'));
   try {
-    await fs.writeFile(path.join(work, 'document.tex'), source, 'utf8');
+    await fs.writeFile(path.join(work, 'document.tex'), prepareLatex(source), 'utf8');
     const env = {
       ...process.env,
       PATH: path.dirname(executable) + path.delimiter + (process.env.PATH || ''),

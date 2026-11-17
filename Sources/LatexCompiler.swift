@@ -66,7 +66,7 @@ enum LatexCompiler {
             defer { try? FileManager.default.removeItem(at: work) }
             let name = input.fileURL?.lastPathComponent ?? "main.tex"
             let source = work.appendingPathComponent(name)
-            try input.source.write(to: source, atomically: true, encoding: .utf8)
+            try LatexPaper.prepare(input.source).write(to: source, atomically: true, encoding: .utf8)
 
             var environment = ProcessInfo.processInfo.environment
             let texBin = executable.deletingLastPathComponent().path

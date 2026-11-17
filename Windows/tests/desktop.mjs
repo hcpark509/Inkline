@@ -89,6 +89,43 @@ async function waitFor(predicate, label, timeout = 15000) {
   }
   throw Error('Timed out waiting for ' + label);
 }
+const { firstPageSize } = require('../src/paper.cjs');
+const near = (size, width, height) =>
+  !!size && Math.abs(size.width - width) < 1.5 && Math.abs(size.height - height) < 1.5;
+// Replaces the system print dialog with a PDF capture of what would be printed.
+async function capturePrinting() {
+  await electronApp.evaluate(({ webContents }) => {
+    const prototype = Object.getPrototypeOf(webContents.getAllWebContents()[0]);
+    prototype.print = function (options, callback) {
+      const inches = (microns) => microns / 25400;
+      this.printToPDF({
+        pageSize: {
+          width: inches(options.pageSize.width),
+          height: inches(options.pageSize.height),
+        },
+        printBackground: true,
+        margins: { top: 0, bottom: 0, left: 0, right: 0 },
+      }).then(
+        (pdf) => {
+          globalThis.inklinePrinted = { options, pdf: pdf.toString('base64') };
+          callback(true, '');
+        },
+        (e) => callback(false, e.message),
+      );
+    };
+  });
+}
+async function printed(documentId) {
+  const result = await page.evaluate(
+    (id) => window.inkline.call('print', { documentId: id }),
+    documentId,
+  );
+  assert.equal(result.printed, true);
+  const job = await electronApp.evaluate(() => globalThis.inklinePrinted);
+  assert.equal(job.options.silent, false);
+  assert.equal(job.options.deviceName, undefined);
+  return { ...job, pdf: Buffer.from(job.pdf, 'base64') };
+}
 async function core(method, args) {
   if (method === 'state') return (await page.evaluate(() => window.inkline.call('state'))).settings;
   await electronApp.evaluate(
@@ -265,6 +302,11 @@ try {
   assert.equal(mdPDF.subarray(0, 4).toString(), '%PDF');
   assert.match(mdPDF.toString('latin1'), /\/Subtype\s*\/Image/);
   assert.match(mdPDF.toString('latin1'), /Arial|Georgia/);
+  assert.ok(near(firstPageSize(mdPDF), 595.3, 841.9), 'Markdown export is not A4');
+  await capturePrinting();
+  const mdPrint = await printed(imageDoc.document_id);
+  assert.deepEqual(mdPrint.options.pageSize, { width: 210000, height: 297000 });
+  assert.match(mdPrint.pdf.toString('latin1'), /\/Subtype\s*\/Image/);
   const htmlDoc = await tool('create_document', {
     format: 'html',
     source:
@@ -285,6 +327,27 @@ try {
     (await fs.readFile(path.join(temporary, 'html.pdf'))).subarray(0, 4).toString(),
     '%PDF',
   );
+  assert.ok(near(firstPageSize(await fs.readFile(path.join(temporary, 'html.pdf'))), 595.3, 841.9));
+  assert.deepEqual((await printed(htmlDoc.document_id)).options.pageSize, {
+    width: 210000,
+    height: 297000,
+  });
+  const landscape = await tool('create_document', {
+    format: 'html',
+    source: '<!doctype html><style>@page { size: letter landscape; }</style><h1>Wide page</h1>',
+  });
+  await tool('export_pdf', {
+    document_id: landscape.document_id,
+    expected_revision: landscape.revision,
+    path: path.join(temporary, 'landscape.pdf'),
+  });
+  assert.ok(
+    near(firstPageSize(await fs.readFile(path.join(temporary, 'landscape.pdf'))), 792, 612),
+  );
+  assert.deepEqual((await printed(landscape.document_id)).options.pageSize, {
+    width: 279400,
+    height: 215900,
+  });
   const readResources = await request('resources/list');
   assert.ok(readResources.resources.some((r) => r.uri === htmlDoc.resource_uri));
   assert.ok(
@@ -321,10 +384,15 @@ try {
       (await fs.readFile(path.join(temporary, 'latex.pdf'))).subarray(0, 4).toString(),
       '%PDF',
     );
+    const latexPrint = await printed(changed.document_id);
+    assert.deepEqual(latexPrint.options.pageSize, { width: 210000, height: 297000 });
+    assert.deepEqual(latexPrint.options.margins, { marginType: 'none' });
+    assert.ok(near(firstPageSize(latexPrint.pdf), 595.3, 841.9));
+    assert.match(latexPrint.pdf.toString('latin1'), /\/Subtype\s*\/Image/);
   }
   assert.deepEqual(errors, []);
   console.log(
-    'DESKTOP TESTS PASSED: editing, Markdown/HTML, tables, Undo, settings/themes, imported fonts, autosave, projects/images, all PDF exports, LaTeX shortcuts, and MCP.',
+    'DESKTOP TESTS PASSED: editing, Markdown/HTML, tables, Undo, settings/themes, imported fonts, autosave, projects/images, all PDF exports, A4/CSS paper sizes, printing, LaTeX shortcuts, and MCP.',
   );
   console.log('Fixtures:', temporary);
 } catch (e) {

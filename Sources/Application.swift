@@ -124,6 +124,7 @@ final class InklineApplication: NSObject, NSApplicationDelegate {
         file.command("Duplicate", "duplicateDocument:")
         file.addItem(.separator())
         file.command("Export PDF…", "exportPDF:", "e", [.command, .shift])
+        file.command("Print…", "printDocument:", "p")
 
         let edit = menu("Edit")
         edit.command("Undo", "undo:", "z")

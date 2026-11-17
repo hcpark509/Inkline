@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **File → Print…** (⌘P on macOS, Ctrl+P on Windows) for Markdown, HTML, and LaTeX. It prints what Export PDF produces, and the system print dialog opens on the default printer.
+
+### Changed
+
+- PDF export and printing use A4 paper by default. LaTeX keeps a paper size stated in its preamble, and HTML keeps a CSS `@page { size: … }` rule.
+- LaTeX passes `a4paper` to the document class when no size is stated. The PDF page size now follows the layout's paper size, so `letterpaper` and similar options apply even when the TeX distribution defaults to another size.
+- macOS HTML exports are split into pages instead of being captured as one tall page.
+
+### Fixed
+
+- The native workspace test compared project-root URLs that differed only by a trailing slash.
+
 ## [Windows 1.4.0] — 2026-11-12
 
 - Added a Windows implementation with Markdown, HTML, and LaTeX editing, previews, PDF export, autosave, keyboard shortcuts, all four color themes, editable table generation, project folders, private font imports, and a separate Settings window.

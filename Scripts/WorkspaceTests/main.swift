@@ -125,7 +125,7 @@ func require(_ condition: @autoclosure () throws -> Bool, _ message: String) thr
     let bitmap = NSBitmapImageRep(data: image.tiffRepresentation!)!
     try bitmap.representation(using: .png, properties: [:])!.write(to: imageURL)
     try ProjectWorkspace.shared.select(root)
-    try require(document.projectRoot == root, "Document project root failed")
+    try require(document.projectRoot?.path == root.path, "Document project root failed")
     try require(previewAsset(at: "../figures/plot.png", in: note.deletingLastPathComponent(), projectRoot: root) == imageURL, "Parent-relative asset failed")
     try require(previewAsset(at: "figures/plot.png", in: note.deletingLastPathComponent(), projectRoot: root) == imageURL, "Root-relative asset failed")
     try require(previewAsset(at: "../../../../etc/passwd", in: note.deletingLastPathComponent(), projectRoot: root) == nil, "Project escape allowed")
@@ -163,6 +163,97 @@ func require(_ condition: @autoclosure () throws -> Bool, _ message: String) thr
     try await export(html, to: root.appendingPathComponent("html.pdf"))
     try require(PDFDocument(url: root.appendingPathComponent("html.pdf"))?.string?.contains("HTML project asset") == true, "HTML export failed")
     print("Imported source font, Markdown PDF, and HTML project exports passed.\nFixtures: " + root.path)
+    try await paperSizes(root: root, markdown: pdf!, html: html)
+}
+
+@MainActor func pageSize(_ pdf: PDFDocument?, _ index: Int = 0) -> CGSize {
+    pdf?.page(at: index)?.bounds(for: .mediaBox).size ?? .zero
+}
+func near(_ size: CGSize, _ width: CGFloat, _ height: CGFloat) -> Bool {
+    abs(size.width - width) < 1.5 && abs(size.height - height) < 1.5
+}
+
+@MainActor func paperSizes(root: URL, markdown: PDFDocument, html: InklineDocument) async throws {
+    try require(PaperSize.css("letter landscape") == PaperSize(width: 792, height: 612), "CSS letter landscape failed")
+    try require(near(PaperSize.css("A5")!.size, 419.5, 595.3), "CSS A5 failed")
+    try require(PaperSize.css("8.5in 11in") == PaperSize(width: 612, height: 792), "CSS lengths failed")
+    try require(PaperSize.css("auto") == nil && PaperSize.css("bogus") == nil, "CSS auto/invalid failed")
+    let stated = [
+        #"\documentclass[letterpaper]{article}"#, #"\documentclass[a5paper,11pt]{article}"#,
+        #"\documentclass{scrartcl}\KOMAoptions{paper=letter}"#, #"\documentclass{beamer}"#,
+        "\\documentclass{article}\n\\usepackage[margin=1in, paper=legalpaper]{geometry}",
+        #"\documentclass{article}\geometry{paperwidth=5in,paperheight=7in}"#,
+        #"\documentclass{memoir}\setstocksize{9in}{6in}"#
+    ]
+    for source in stated { try require(LatexPaper.statesPaperSize(source + "\n\\begin{document}x\\end{document}"), "Missed stated size: " + source) }
+    let unstated = [
+        #"\documentclass[11pt]{article}"#, "% \\documentclass[letterpaper]{article}\n\\documentclass{report}",
+        "\\documentclass{article}\n\\begin{document}\nletterpaper \\paperwidth=1in\n"
+    ]
+    for source in unstated { try require(!LatexPaper.statesPaperSize(source), "Invented a stated size: " + source) }
+    try require(LatexPaper.prepare("\\documentclass{report}\nx").hasPrefix(#"\PassOptionsToClass{a4paper}{report}"#), "A4 class option missing")
+    try require(!LatexPaper.prepare("\\documentclass[letterpaper]{report}\n").contains("a4paper"), "A4 overrode a stated size")
+    try require(!LatexPaper.prepare("\\documentclass{report}\nx").contains("\n\\documentclass") , "LaTeX prefix moved source lines")
+
+    try require(near(pageSize(markdown), 595.3, 841.9), "Markdown export is not A4: \(pageSize(markdown))")
+    try require(near(pageSize(PDFDocument(url: root.appendingPathComponent("html.pdf"))), 595.3, 841.9), "HTML export is not A4")
+
+    let paragraphs = (1...140).map { "<p>Paragraph \($0) for pagination.</p>" }.joined()
+    try html.automationReplace("<style>@page { size: letter landscape; }</style>" + paragraphs)
+    try await export(html, to: root.appendingPathComponent("html-letter.pdf"))
+    let letter = PDFDocument(url: root.appendingPathComponent("html-letter.pdf"))
+    try require(near(pageSize(letter), 792, 612), "HTML @page size ignored: \(pageSize(letter))")
+    try require((letter?.pageCount ?? 0) > 1, "HTML export did not paginate")
+    try html.automationReplace(paragraphs)
+    try await export(html, to: root.appendingPathComponent("html-a4.pdf"))
+    let a4 = PDFDocument(url: root.appendingPathComponent("html-a4.pdf"))
+    try require(near(pageSize(a4), 595.3, 841.9) && (a4?.pageCount ?? 0) > 1, "HTML default A4 pagination failed")
+
+    let body = "\n\\begin{document}\nPaper\n\\end{document}\n"
+    for engine in LatexEngine.allCases {
+        let plain = LatexCompiler.compile(LatexInput(source: #"\documentclass{article}"# + body, fileURL: nil, engine: engine))
+        try require(near(pageSize(plain.pdf.flatMap(PDFDocument.init(data:))), 595.3, 841.9), "\(engine.title) default is not A4: " + plain.log)
+        let letter = LatexCompiler.compile(LatexInput(source: #"\documentclass[letterpaper]{article}"# + body, fileURL: nil, engine: engine))
+        try require(near(pageSize(letter.pdf.flatMap(PDFDocument.init(data:))), 612, 792), "\(engine.title) ignored letterpaper")
+        let geometry = LatexCompiler.compile(LatexInput(source: #"\documentclass{article}\usepackage[paperwidth=5in,paperheight=7in]{geometry}"# + body, fileURL: nil, engine: engine))
+        try require(near(pageSize(geometry.pdf.flatMap(PDFDocument.init(data:))), 360, 504), "\(engine.title) ignored geometry")
+    }
+    let broken = LatexCompiler.compile(LatexInput(source: "\\documentclass{article}\n\\begin{document}\n\\undefinedmacro\n\\end{document}\n", fileURL: nil, engine: .pdfLaTeX))
+    try require(broken.message.hasPrefix("main.tex:3:"), "LaTeX error line moved: " + broken.message)
+    print("A4 defaults, CSS @page sizes, HTML pagination, and stated LaTeX paper sizes passed.")
+
+    try html.automationReplace("<style>@page { size: letter landscape; }</style><p>Print me</p>")
+    try await printPanel(html, expecting: CGSize(width: 792, height: 612))
+    let latex = try InklineDocument.openUntitled(format: .latex, source: "\\documentclass{article}" + body)
+    try await printPanel(latex, expecting: CGSize(width: 595.3, height: 841.9))
+    print("Print panels open on the default printer with the exported paper size.")
+}
+
+/// Opens File > Print, checks the panel's printer and paper, then cancels it.
+@MainActor func printPanel(_ document: InklineDocument, expecting paper: CGSize) async throws {
+    let window = document.windowControllers.first!.window!
+    window.makeKeyAndOrderFront(nil)
+    let item = NSMenuItem(title: "Print…", action: #selector(WorkspaceController.printDocument(_:)), keyEquivalent: "")
+    try require(document.workspace.validateUserInterfaceItem(item), "Print is unavailable")
+    document.workspace.printDocument(nil)
+    var waited = 0.0
+    while window.attachedSheet == nil, waited < 30 { await pause(0.2); waited += 0.2 }
+    guard let sheet = window.attachedSheet else {
+        throw AutomationError(message: "Print panel did not open for \(document.format.title)")
+    }
+    guard let operation = document.workspace.activePrintOperation else {
+        throw AutomationError(message: "Print sheet \(type(of: sheet)) has no current operation")
+    }
+    let info = operation.printInfo
+    try require(info.printer.name == NSPrintInfo().printer.name, "Print panel did not start on the default printer")
+    try require(info.jobDisposition == .spool, "Print job is not sent to a printer")
+    let size = info.orientation == .landscape && info.paperSize.width < info.paperSize.height
+        ? CGSize(width: info.paperSize.height, height: info.paperSize.width) : info.paperSize
+    try require(near(size, paper.width, paper.height), "Print paper is \(size), expected \(paper)")
+    window.endSheet(sheet, returnCode: .cancel)
+    waited = 0
+    while !document.workspace.validateUserInterfaceItem(item), waited < 10 { await pause(0.2); waited += 0.2 }
+    try require(document.workspace.validateUserInterfaceItem(item), "Print stayed busy after cancel")
 }
 
 final class TestDelegate: NSObject, NSApplicationDelegate {
