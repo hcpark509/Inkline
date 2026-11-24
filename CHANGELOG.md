@@ -4,6 +4,8 @@
 
 ### Added
 
+- Project path suggestions while typing LaTeX, Markdown, and HTML paths, relative to the document's folder.
+- `build_latex_pdf` MCP tool: builds a `.tex` file on disk without opening a window and returns a short summary of pages, paper, errors with line numbers, and warnings. `--tool NAME` limits the tools a connection offers.
 - **File → Print…** (⌘P on macOS, Ctrl+P on Windows) for Markdown, HTML, and LaTeX. It prints what Export PDF produces, and the system print dialog opens on the default printer.
 
 ### Changed
@@ -14,6 +16,8 @@
 
 ### Fixed
 
+- LaTeX `../` paths, such as `\includegraphics{../figures/x.png}` from a document in a subfolder, failed to compile, including paths written by Insert Figure. LaTeX now runs from the document's folder with a temporary output folder.
+- LaTeX errors from long temporary paths were not located, because TeX wrapped log lines at 79 columns.
 - The native workspace test compared project-root URLs that differed only by a trailing slash.
 
 ## [Windows 1.4.0] — 2026-11-12

@@ -262,7 +262,7 @@ test('MCP revisions, unique-match edits, read-only roots, resources and saved fo
     (await request('close_document', { document_id: d.id })).structuredContent.closed,
     true,
   );
-  assert.equal(tools.length, 12);
+  assert.equal(tools.length, 13);
   assert.throws(() =>
     validate('replace_document', { document_id: 'id', source: 'missing revision' }),
   );
@@ -405,5 +405,110 @@ test(
       }),
       /document\.tex:3:/,
     );
+  },
+);
+
+test('LaTeX errors are located when TeX prints the temporary path with forward slashes', () => {
+  const { diagnostics } = require('../src/latex.cjs');
+  const work = 'C:\\Users\\runner\\AppData\\Local\\Temp\\inkline-tex-abc';
+  const log = [
+    '! Undefined control sequence.',
+    'C:/Users/runner/AppData/Local/Temp/inkline-tex-abc/document.tex:3: Undefined control sequence.',
+    'C:/Users/runner/AppData/Local/Temp/inkline-tex-abc/document.tex:3:  ==> Fatal error occurred, no output PDF file produced!',
+    './chapters/intro.tex:7: Missing $ inserted.',
+  ].join('\r\n');
+  assert.deepEqual(diagnostics(log, work), [
+    { file: 'document.tex', line: 3, message: 'Undefined control sequence.' },
+    { file: 'chapters/intro.tex', line: 7, message: 'Missing $ inserted.' },
+  ]);
+  assert.deepEqual(diagnostics('! Emergency stop.', work), [{ message: 'Emergency stop.' }]);
+});
+
+test('path suggestions follow the Overleaf-style rules shared with macOS', async () => {
+  const { pathContext, rankPaths } = await import('../renderer/paths.mjs');
+  const files = [
+    '../figures/plot.png',
+    '../figures/results/chart one.png',
+    'intro.tex',
+    '../refs.bib',
+    '../notes.md',
+  ];
+  const graphic = pathContext('\\includegraphics[width=2cm]{../fig', 'latex');
+  assert.equal(graphic.partial, '../fig');
+  assert.deepEqual(rankPaths(graphic, files), [
+    '../figures/plot.png',
+    '../figures/results/chart one.png',
+  ]);
+  assert.deepEqual(rankPaths(pathContext('\\include{in', 'latex'), files), ['intro']);
+  assert.deepEqual(rankPaths(pathContext('\\bibliography{a,../re', 'latex'), files), ['../refs']);
+  assert.deepEqual(rankPaths(pathContext('![Chart](../figures/res', 'markdown'), files), [
+    '../figures/results/chart%20one.png',
+  ]);
+  assert.equal(pathContext('<img src="https://x', 'html'), null);
+  assert.equal(pathContext('Plain {text', 'latex'), null);
+  assert.equal(pathContext('<a href="../no', 'html').kind, 'any');
+});
+
+test(
+  'LaTeX resolves ../ and subfolder paths, and build_latex_pdf summarizes',
+  { skip: !process.env.INKLINE_REQUIRE_TEX && 'set INKLINE_REQUIRE_TEX=1' },
+  async () => {
+    const { compileLatex } = require('../src/latex.cjs');
+    const { buildLatexPdf } = require('../src/build.cjs');
+    const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'inkline-paths-')));
+    await fs.mkdir(path.join(root, 'chapters'));
+    await fs.mkdir(path.join(root, 'figures', 'results'), { recursive: true });
+    const png = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==',
+      'base64',
+    );
+    await fs.writeFile(path.join(root, 'figures', 'plot.png'), png);
+    await fs.writeFile(path.join(root, 'figures', 'results', 'chart.png'), png);
+    await fs.writeFile(path.join(root, 'shared.tex'), 'Shared text.\n');
+    await fs.writeFile(path.join(root, 'chapters', 'intro.tex'), 'Intro.\n');
+    const tex = path.join(root, 'chapters', 'main.tex');
+    const source =
+      '\\documentclass{article}\\usepackage{graphicx}\\begin{document}\\input{../shared}\\include{intro}' +
+      '\\includegraphics[width=1cm]{../figures/plot.png}\\includegraphics[width=1cm]{figures/results/chart.png}\\end{document}\n';
+    const compiled = await compileLatex({ source, file: tex, projectRoot: root });
+    assert.equal(compiled.pdf.subarray(0, 4).toString(), '%PDF');
+    assert.ok(compiled.pages >= 1);
+    assert.ok(Math.abs(compiled.size.width - 595.28) < 1.5);
+    await assert.rejects(fs.access(path.join(root, 'chapters', 'main.aux')));
+    await assert.rejects(
+      compileLatex({
+        source:
+          '\\documentclass{article}\n\\usepackage{graphicx}\n\\begin{document}\n\\includegraphics{../nope.png}\n\\end{document}\n',
+        file: tex,
+        projectRoot: root,
+      }),
+      (e) => e.errors[0].file === 'main.tex' && e.errors[0].line === 4,
+    );
+
+    await fs.writeFile(tex, source);
+    const scope = await Scope.create([root], [root]);
+    const built = await buildLatexPdf({ path: tex, project_root: root }, scope);
+    assert.equal(built.success, true, JSON.stringify(built));
+    assert.equal(built.paper, 'A4');
+    assert.ok(built.pages >= 1);
+    assert.ok(JSON.stringify(built).length < 600);
+    await assert.rejects(buildLatexPdf({ path: tex }, scope), /overwrite=true/);
+    await fs.writeFile(
+      path.join(root, 'broken.tex'),
+      '\\documentclass{article}\n\\begin{document}\n\\oops\n\\end{document}\n',
+    );
+    const broken = await buildLatexPdf({ path: path.join(root, 'broken.tex') }, scope);
+    assert.equal(broken.success, false);
+    assert.deepEqual(broken.errors[0], {
+      message: 'Undefined control sequence.',
+      file: 'broken.tex',
+      line: 3,
+    });
+    const narrow = await Scope.create([path.join(root, 'figures')], []);
+    await assert.rejects(
+      buildLatexPdf({ path: tex, overwrite: true }, narrow),
+      /outside the configured/,
+    );
+    await fs.rm(root, { recursive: true, force: true });
   },
 );

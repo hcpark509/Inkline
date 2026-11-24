@@ -164,6 +164,75 @@ func require(_ condition: @autoclosure () throws -> Bool, _ message: String) thr
     try require(PDFDocument(url: root.appendingPathComponent("html.pdf"))?.string?.contains("HTML project asset") == true, "HTML export failed")
     print("Imported source font, Markdown PDF, and HTML project exports passed.\nFixtures: " + root.path)
     try await paperSizes(root: root, markdown: pdf!, html: html)
+    try await projectPaths(root: root)
+}
+
+@MainActor func projectPaths(root: URL) async throws {
+    let fm = FileManager.default
+    try fm.createDirectory(at: root.appendingPathComponent("figures/results"), withIntermediateDirectories: true)
+    try fm.copyItem(at: root.appendingPathComponent("figures/plot.png"), to: root.appendingPathComponent("figures/results/chart one.png"))
+    try "Chapter text.\n".write(to: root.appendingPathComponent("chapters/intro.tex"), atomically: true, encoding: .utf8)
+    try "@misc{k, title={T}}\n".write(to: root.appendingPathComponent("refs.bib"), atomically: true, encoding: .utf8)
+    let nested = root.appendingPathComponent("chapters/main.tex")
+    let body = #"\documentclass{article}\usepackage{graphicx}\begin{document}\input{../shared}\include{intro}"#
+        + #"\includegraphics[width=1cm]{../figures/plot.png}\includegraphics[width=1cm]{figures/results/chart one.png}\end{document}"#
+    let relative = LatexCompiler.compile(LatexInput(source: body, fileURL: nested, engine: .pdfLaTeX, projectURL: root))
+    try require(relative.pdf != nil, "../, \\include, and root-relative paths failed: " + relative.message)
+    try require(!fm.fileExists(atPath: root.appendingPathComponent("chapters/main.aux").path), "LaTeX wrote auxiliary files into the project")
+    let missing = LatexCompiler.compile(LatexInput(source: "\\documentclass{article}\n\\usepackage{graphicx}\n\\begin{document}\n\\includegraphics{../nope.png}\n\\end{document}\n",
+                                                   fileURL: nested, engine: .pdfLaTeX, projectURL: root))
+    try require(missing.errors.first?.file == "main.tex" && missing.errors.first?.line == 4, "Missing figure error was not located: " + missing.message)
+
+    let text = #"\includegraphics[width=2cm]{../fig"# as NSString
+    let context = PathCompletion.context(in: text, caret: text.length, format: .latex)
+    try require(context?.partial == "../fig" && context?.kind == .graphic, "LaTeX path context failed")
+    let files = PathCompletion.files(under: root)
+    let graphics = PathCompletion.suggestions(for: context!, base: root.appendingPathComponent("chapters"), files: files)
+    try require(graphics.first == "../figures/plot.png" && graphics.contains("../figures/results/chart one.png"), "Graphic suggestions: \(graphics)")
+    let include = PathCompletion.context(in: #"\include{in"# as NSString, caret: 11, format: .latex)!
+    try require(PathCompletion.suggestions(for: include, base: root.appendingPathComponent("chapters"), files: files) == ["intro"], "\\include suggestion kept .tex")
+    let bib = PathCompletion.context(in: #"\bibliography{a,re"# as NSString, caret: 18, format: .latex)!
+    try require(PathCompletion.suggestions(for: bib, base: root, files: files) == ["refs"], "Bibliography suggestion failed")
+    let image = PathCompletion.context(in: "![Chart](../figures/res" as NSString, caret: 23, format: .markdown)!
+    try require(PathCompletion.suggestions(for: image, base: root.appendingPathComponent("chapters"), files: files) == ["../figures/results/chart%20one.png"], "Markdown suggestion failed")
+    try require(PathCompletion.context(in: "<img src=\"https://x" as NSString, caret: 19, format: .html) == nil, "Remote URL was treated as a path")
+    try require(PathCompletion.context(in: "Plain {text" as NSString, caret: 11, format: .latex) == nil, "Plain braces were treated as a path")
+
+    let document = try InklineDocument.openUntitled(format: .latex, source: "")
+    try await save(document, to: nested)
+    let window = document.windowControllers.first!.window!
+    window.makeKeyAndOrderFront(nil)
+    let editor = document.workspace.textView
+    window.makeFirstResponder(editor)
+    editor.insertText(#"\includegraphics{../figures/pl"#, replacementRange: editor.selectedRange())
+    try require(document.workspace.suggestedPaths == ["../figures/plot.png"], "Editor did not suggest the figure: \(document.workspace.suggestedPaths)")
+    _ = document.workspace.textView(editor, doCommandBy: #selector(NSResponder.insertNewline(_:)))
+    try require(editor.string == #"\includegraphics{../figures/plot.png"#, "Accepting a suggestion failed: " + editor.string)
+    try require(document.workspace.suggestedPaths.isEmpty, "Suggestions stayed open after accepting")
+    editor.insertText("}", replacementRange: editor.selectedRange())
+    try require(document.workspace.suggestedPaths.isEmpty, "Suggestions reopened after the closing brace")
+    print("Overleaf-style relative paths, located missing-file errors, and path suggestions passed.")
+
+    let scope = try AutomationScope(read: [root.path], write: [root.path])
+    let report = root.appendingPathComponent("chapters/report.tex")
+    try body.write(to: report, atomically: true, encoding: .utf8)
+    let built = try LatexBuild.run(["path": report.path, "project_root": root.path], scope: scope)
+    try require(built["success"] as? Bool == true && (built["pages"] as? Int ?? 0) > 0 && built["paper"] as? String == "A4", "build_latex_pdf failed: \(built)")
+    try require(fm.fileExists(atPath: root.appendingPathComponent("chapters/report.pdf").path), "build_latex_pdf wrote no PDF")
+    do {
+        _ = try LatexBuild.run(["path": report.path], scope: scope)
+        throw AutomationError(message: "build_latex_pdf replaced a PDF without overwrite")
+    } catch let error as AutomationError where error.message.contains("overwrite=true") {}
+    try "\\documentclass{article}\n\\begin{document}\n\\oops\n\\end{document}\n".write(to: root.appendingPathComponent("broken.tex"), atomically: true, encoding: .utf8)
+    let broken = try LatexBuild.run(["path": root.appendingPathComponent("broken.tex").path], scope: scope)
+    let firstError = (broken["errors"] as? [[String: Any]])?.first
+    try require(broken["success"] as? Bool == false && firstError?["line"] as? Int == 3, "build_latex_pdf error summary failed: \(broken)")
+    let outside = try AutomationScope(read: [root.appendingPathComponent("figures").path], write: [])
+    do {
+        _ = try LatexBuild.run(["path": report.path, "overwrite": true], scope: outside)
+        throw AutomationError(message: "build_latex_pdf read a file outside its roots")
+    } catch let error as AutomationError where error.message.hasPrefix("Path is outside") {}
+    print("Headless build_latex_pdf summaries, overwrite protection, and file roots passed.")
 }
 
 @MainActor func pageSize(_ pdf: PDFDocument?, _ index: Int = 0) -> CGSize {

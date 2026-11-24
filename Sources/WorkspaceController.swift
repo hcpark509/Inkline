@@ -13,6 +13,11 @@ final class WorkspaceController: NSViewController, NSTextViewDelegate, NSUserInt
     private let projectBrowser = ProjectBrowser()
     private var projectWidth: NSLayoutConstraint!
     private var tableBuilder: TableBuilder?
+    private let pathSuggestions = PathSuggestionPopup()
+    private var pathContext: PathCompletion.Context?
+    private var acceptingSuggestion = false
+    /// Paths currently offered below the caret.
+    var suggestedPaths: [String] { pathSuggestions.isVisible ? pathSuggestions.items : [] }
     private weak var document: InklineDocument?
     private var sourceItem: NSSplitViewItem!
     private var previewItem: NSSplitViewItem!
@@ -180,6 +185,8 @@ final class WorkspaceController: NSViewController, NSTextViewDelegate, NSUserInt
         NotificationCenter.default.addObserver(self, selector: #selector(updateSaveStatus),
                                                name: InklineDocument.saveStatusDidChange, object: document)
         root.appearanceChanged = { [weak self] in self?.updateFonts() }
+        NotificationCenter.default.addObserver(self, selector: #selector(windowResigned(_:)),
+                                               name: NSWindow.didResignKeyNotification, object: nil)
         projectChanged()
         updateFonts()
     }
@@ -457,6 +464,7 @@ final class WorkspaceController: NSViewController, NSTextViewDelegate, NSUserInt
     }
 
     @objc private func projectChanged() {
+        PathCompletion.invalidate()
         projectBrowser.view.isHidden = ProjectWorkspace.shared.rootURL == nil
         projectWidth.constant = ProjectWorkspace.shared.rootURL == nil ? 0 : 220
         preview.setDocumentURL(document?.fileURL, projectRoot: document?.projectRoot)
@@ -501,13 +509,86 @@ final class WorkspaceController: NSViewController, NSTextViewDelegate, NSUserInt
         document?.source = textView.string
         textView.updateLines()
         updatePosition()
+        updatePathSuggestions()
         refreshTask?.cancel()
         let task = DispatchWorkItem { [weak self] in self?.refresh() }
         refreshTask = task
         DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(100), execute: task)
     }
 
-    func textViewDidChangeSelection(_ notification: Notification) { updatePosition() }
+    func textViewDidChangeSelection(_ notification: Notification) {
+        updatePosition()
+        if pathSuggestions.isVisible, let pathContext {
+            let caret = textView.selectedRange()
+            if caret.length > 0 || caret.location != NSMaxRange(pathContext.range) { hidePathSuggestions() }
+        }
+    }
+
+    /// Folder that relative paths start from, and the folder whose files are offered.
+    private var pathFolders: (base: URL, boundary: URL)? {
+        guard let base = document?.fileURL?.deletingLastPathComponent() ?? document?.projectRoot else { return nil }
+        return (base, document?.projectRoot ?? base)
+    }
+
+    /// Shows project files while a path argument is being typed. `force` also opens it for ⌥Esc.
+    func updatePathSuggestions(force: Bool = false) {
+        guard !acceptingSuggestion, let window = view.window, let folders = pathFolders else { hidePathSuggestions(); return }
+        let caret = textView.selectedRange()
+        guard caret.length == 0, !textView.hasMarkedText(),
+              let context = PathCompletion.context(in: textView.string as NSString, caret: caret.location, format: format) else {
+            hidePathSuggestions()
+            return
+        }
+        let items = PathCompletion.suggestions(for: context, base: folders.base,
+                                               files: PathCompletion.files(under: folders.boundary))
+        let next = (textView.string as NSString).length > caret.location
+            ? (textView.string as NSString).substring(with: NSRange(location: caret.location, length: 1)) : ""
+        let finished = items == [context.partial] && ["}", ")", "\"", "'"].contains(next)
+        guard !items.isEmpty, !finished || force else { hidePathSuggestions(); return }
+        pathContext = context
+        pathSuggestions.onAccept = { [weak self] path in self?.acceptPath(path) }
+        let rect = textView.firstRect(forCharacterRange: NSRange(location: context.range.location, length: 0), actualRange: nil)
+        pathSuggestions.show(items, below: rect, in: window)
+    }
+
+    @objc private func windowResigned(_ notification: Notification) {
+        if (notification.object as? NSWindow) === view.window { hidePathSuggestions() }
+    }
+
+    override func viewWillDisappear() {
+        super.viewWillDisappear()
+        hidePathSuggestions()
+    }
+
+    private func hidePathSuggestions() {
+        pathSuggestions.hide()
+        pathContext = nil
+    }
+
+    private func acceptPath(_ path: String) {
+        guard let context = pathContext else { return }
+        pathContext = nil
+        acceptingSuggestion = true
+        defer { acceptingSuggestion = false }
+        textView.insertText(path, replacementRange: context.range)
+        textView.undoManager?.setActionName("Insert Path")
+    }
+
+    func textView(_ textView: NSTextView, doCommandBy selector: Selector) -> Bool {
+        if selector == #selector(NSResponder.complete(_:)) {
+            updatePathSuggestions(force: true)
+            return pathSuggestions.isVisible
+        }
+        guard pathSuggestions.isVisible else { return false }
+        switch selector {
+        case #selector(NSResponder.moveUp(_:)): pathSuggestions.move(-1)
+        case #selector(NSResponder.moveDown(_:)): pathSuggestions.move(1)
+        case #selector(NSResponder.insertNewline(_:)), #selector(NSResponder.insertTab(_:)): pathSuggestions.accept()
+        case #selector(NSResponder.cancelOperation(_:)): hidePathSuggestions()
+        default: return false
+        }
+        return true
+    }
 
     private func updatePosition() {
         let text = textView.string as NSString

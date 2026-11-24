@@ -91,7 +91,7 @@ enum LatexPaper {
     static let pageSync = #"\edef\InklinePaperW{\the\pdfpagewidth}\edef\InklinePaperH{\the\pdfpageheight}"#
         + #"\AtBeginDocument{\ifdim\pdfpagewidth=\InklinePaperW\relax\ifdim\pdfpageheight=\InklinePaperH\relax"#
         + #"\ifdim\paperwidth>0pt\ifdim\paperheight>0pt\pdfpagewidth=\paperwidth\pdfpageheight=\paperheight"#
-        + #"\fi\fi\fi\fi}"#
+        + #"\fi\fi\fi\fi\typeout{Inkline page size: \the\pdfpagewidth\space x \the\pdfpageheight}}"#
 
     static func preamble(of source: String) -> String {
         let uncommented = source.replacingOccurrences(of: #"(?<!\\)%[^\n]*"#, with: "", options: .regularExpression)

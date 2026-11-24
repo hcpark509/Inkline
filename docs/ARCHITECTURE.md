@@ -1,6 +1,6 @@
 # Architecture
 
-This page describes the native **macOS** implementation. The separate [Windows implementation](../Windows/README.md) uses Electron, CodeMirror, a restricted main/preload/renderer interface, and a standalone console MCP helper over a local named pipe. Both editions implement the same document formats and twelve MCP tools.
+This page describes the native **macOS** implementation. The separate [Windows implementation](../Windows/README.md) uses Electron, CodeMirror, a restricted main/preload/renderer interface, and a standalone console MCP helper over a local named pipe. Both editions implement the same document formats and thirteen MCP tools.
 
 Inkline is a Swift/AppKit document application targeting macOS 13 and later. The app builds directly with the Xcode Command Line Tools; it has no Swift Package Manager, npm, or Python runtime dependency. Python is used only by the MCP regression script.
 
@@ -21,6 +21,8 @@ Inkline is a Swift/AppKit document application targeting macOS 13 and later. The
 | `FontPreferences.swift`, `LocalFonts.swift` | Source/preview typefaces, app-private font copies, CoreText registration, and preview font assets. |
 | `SettingsWindowController.swift` | Dedicated General, Appearance, and Fonts settings tabs. |
 | `ProjectWorkspace.swift` | Remembered project folder, relative paths, and project file browser. |
+| `PathCompletion.swift` | Path contexts, ranked project-file suggestions, and the non-focusing suggestion list. |
+| `LatexBuild.swift` | Headless `build_latex_pdf` builds and their short summaries. |
 | `TableBuilder.swift` | Editable table draft, native grid sheet, and format-specific escaping. |
 | `MCPServer.swift` | JSON-RPC stdio transport, protocol negotiation, tool schemas, file roots, and app bridge client. |
 | `AutomationBridge.swift` | GUI-side local message port, document access, and MCP operations on the main thread. |
@@ -40,7 +42,7 @@ The selected project folder is stored as a bookmark. Saved documents inside that
 - Imported font assets are served from the preview's own custom URL scheme. Font files are copied under `Application Support/<bundle identifier>/Fonts` and registered with CoreText for the app process.
 - Markdown PDF export uses a dedicated light-theme renderer and paginates at A4 size.
 - HTML uses a separate WebKit configuration with page scripts disabled. Its export runs a WebKit print operation into a PDF file, paginated on A4 or on the size from a CSS `@page { size: … }` rule read through the CSSOM.
-- LaTeX invokes `pdflatex` or `xelatex` for two passes in a temporary directory, with shell escape disabled and a 45-second compile deadline. The document directory and project root are added to `TEXINPUTS`. Its output is displayed with PDFKit and exported as the compiled PDF. Before compiling, `LatexPaper.prepare` adds a prefix to the first line, so compiler line numbers are unchanged. The prefix passes `a4paper` to the document class unless the preamble states a size, and at `\begin{document}` it sets `\pdfpagewidth`/`\pdfpageheight` from `\paperwidth`/`\paperheight`, unless a package or the document has already changed them.
+- LaTeX invokes `pdflatex` or `xelatex` for two passes, with shell escape disabled and a 45-second compile deadline. The engine runs with the document's folder as its working directory (or the project root for an untitled document) and `-output-directory` set to a temporary folder. That folder mirrors the document folder's subfolders, so `\include{dir/file}` can write its `.aux` file. `../` paths therefore resolve like Overleaf, and auxiliary files never reach the project. The document directory and project root are also added to `TEXINPUTS`, and `max_print_line` keeps `file:line:` errors on one line. Its output is displayed with PDFKit and exported as the compiled PDF. Before compiling, `LatexPaper.prepare` adds a prefix to the first line, so compiler line numbers are unchanged. The prefix passes `a4paper` to the document class unless the preamble states a size, and at `\begin{document}` it sets `\pdfpagewidth`/`\pdfpageheight` from `\paperwidth`/`\paperheight`, unless a package or the document has already changed them.
 - **Print** renders the same PDF as export and prints it through `PDFDocument.printOperation`. The print panel opens as a sheet on a fresh `NSPrintInfo`, so it starts on the system's default printer, with the paper set to the PDF's first page.
 
 ## MCP integration
@@ -54,9 +56,9 @@ Tool names:
 | Documents | `list_documents`, `read_document`, `create_document`, `open_document`, `close_document` |
 | Content | `replace_document`, `edit_document`, `save_document` |
 | Presentation | `set_view`, `set_format` |
-| Output | `compile_latex`, `export_pdf` |
+| Output | `compile_latex`, `export_pdf`, `build_latex_pdf` |
 
-Read/write roots are explicit helper arguments. Write roots also grant read access; no roots grants access only to untitled documents. The helper/bridge validate canonical paths, including symlink destinations. These roots govern requests through Inkline's MCP helper; they are not an operating-system sandbox for the GUI or an external TeX engine.
+`build_latex_pdf` runs inside the helper process and does not contact the GUI. `--tool NAME` (repeatable) limits `tools/list` and `tools/call` to the named tools. Read/write roots are explicit helper arguments. Write roots also grant read access; no roots grants access only to untitled documents. The helper/bridge validate canonical paths, including symlink destinations. These roots govern requests through Inkline's MCP helper; they are not an operating-system sandbox for the GUI or an external TeX engine.
 
 Content edits and PDF export use a SHA-256 revision of the document format and source. Stale revisions are rejected. Content edits enter native Undo history. Unique-match edits reject ambiguous text. Existing unrelated save/export destinations require `overwrite=true`. MCP refuses to close modified documents. Changing a saved document's format opens an untitled copy.
 

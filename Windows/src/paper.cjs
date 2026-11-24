@@ -24,7 +24,7 @@ const pageSync =
   '\\edef\\InklinePaperW{\\the\\pdfpagewidth}\\edef\\InklinePaperH{\\the\\pdfpageheight}' +
   '\\AtBeginDocument{\\ifdim\\pdfpagewidth=\\InklinePaperW\\relax\\ifdim\\pdfpageheight=\\InklinePaperH\\relax' +
   '\\ifdim\\paperwidth>0pt\\ifdim\\paperheight>0pt\\pdfpagewidth=\\paperwidth\\pdfpageheight=\\paperheight' +
-  '\\fi\\fi\\fi\\fi}';
+  '\\fi\\fi\\fi\\fi\\typeout{Inkline page size: \\the\\pdfpagewidth\\space x \\the\\pdfpageheight}}';
 
 function preamble(source) {
   const uncommented = source.replace(/(?<!\\)%[^\n]*/g, '');
