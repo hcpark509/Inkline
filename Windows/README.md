@@ -29,7 +29,8 @@ The prebuilt app targets Windows 10/11 x64. The runtime is included, so Node.js 
 | Projects | Remembered project folder, expandable file browser, relative figure insertion, and project-level TeX inputs. |
 | Fonts | Private `.ttf` and `.otf` imports, independent source/preview families and sizes, and imported fonts in Markdown PDF export. |
 | Settings | A separate window with General, Appearance, and Fonts pages. |
-| MCP | The same twelve document tools and resource access as the Mac edition, over a local Windows named pipe. |
+| MCP | The same thirteen tools and resource access as the Mac edition, over a local Windows named pipe, including headless `build_latex_pdf`. `--tool NAME` limits the offered tools. |
+| Project paths | LaTeX runs from the document's folder, so `../` and subfolder paths resolve like Overleaf. Matching project paths are suggested while you type; Ctrl+Space opens the list. |
 
 Markdown and HTML editing, rendering, and PDF export work offline apart from referenced remote images. LaTeX source editing also works without TeX. Compiling LaTeX requires a separately installed **MiKTeX or TeX Live** distribution with `pdflatex` or `xelatex` available on PATH. The app also checks common per-user MiKTeX/TinyTeX installation folders. The starter uses `amsmath` and `graphicx`.
 

@@ -168,7 +168,7 @@ try {
     clientInfo: { name: 'inkline-desktop-regression', version: '1' },
   });
   assert.equal(initialized.serverInfo.version, '1.4.0');
-  assert.equal((await request('tools/list')).tools.length, 12);
+  assert.equal((await request('tools/list')).tools.length, 13);
   const original = '# Windows edition\n\n한글 ✓ **Bold** and a [link](https://example.com).\n';
   await source(original);
   await waitFor(
@@ -390,9 +390,41 @@ try {
     assert.ok(near(firstPageSize(latexPrint.pdf), 595.3, 841.9));
     assert.match(latexPrint.pdf.toString('latin1'), /\/Subtype\s*\/Image/);
   }
+  // Overleaf-style path suggestions in a saved chapter, then a headless build of it.
+  await fs.mkdir(path.join(project, 'figures', 'results'), { recursive: true });
+  await fs.copyFile(
+    path.join(project, 'figures', 'plot.png'),
+    path.join(project, 'figures', 'results', 'chart.png'),
+  );
+  const chapterTex = path.join(project, 'chapters', 'paths.tex');
+  const chapterSource =
+    '\\documentclass{article}\n\\usepackage{graphicx}\n\\begin{document}\n\\includegraphics[width=1cm]{../figures/results/chart.png}\n\\end{document}\n';
+  await fs.writeFile(chapterTex, chapterSource);
+  await tool('open_document', { path: chapterTex });
+  await source('\\includegraphics{../figures/re');
+  await page.keyboard.type('s');
+  const option = page.locator('.cm-tooltip-autocomplete li', { hasText: 'chart.png' });
+  await option.waitFor({ timeout: 10000 });
+  assert.equal(await option.count(), 1);
+  await page.keyboard.press('Enter');
+  await waitFor(
+    async () =>
+      (await page.locator('.cm-content').textContent()) ===
+      '\\includegraphics{../figures/results/chart.png',
+    'accepted path suggestion',
+  );
+  if (process.env.INKLINE_REQUIRE_TEX === '1') {
+    const built = await tool('build_latex_pdf', { path: chapterTex });
+    assert.equal(built.success, true, JSON.stringify(built));
+    assert.equal(built.paper, 'A4');
+    assert.equal(
+      (await fs.readFile(path.join(project, 'chapters', 'paths.pdf'))).subarray(0, 4).toString(),
+      '%PDF',
+    );
+  }
   assert.deepEqual(errors, []);
   console.log(
-    'DESKTOP TESTS PASSED: editing, Markdown/HTML, tables, Undo, settings/themes, imported fonts, autosave, projects/images, all PDF exports, A4/CSS paper sizes, printing, LaTeX shortcuts, and MCP.',
+    'DESKTOP TESTS PASSED: editing, Markdown/HTML, tables, Undo, settings/themes, imported fonts, autosave, projects/images, all PDF exports, A4/CSS paper sizes, printing, path suggestions, headless LaTeX builds, LaTeX shortcuts, and MCP.',
   );
   console.log('Fixtures:', temporary);
 } catch (e) {

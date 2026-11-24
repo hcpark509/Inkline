@@ -75,6 +75,16 @@ Choose **File → Open Project Folder…** to select a working folder. The sideb
 
 Documents inside the project can reference figures and inputs elsewhere within it. For example, `chapters/note.md` can use `../figures/chart.png`. Markdown also resolves paths such as `figures/chart.png` from the project root when they are absent beside the document. **Insert → Figure…** generates a document-relative path automatically. For an untitled document, paths start at the project root; save it in that root to retain those paths. Save into the intended subfolder before inserting figures when using a nested document.
 
+Paths work the way they do on Overleaf. LaTeX runs from the document's own folder, so `chapters/main.tex` can use `\includegraphics{../figures/chart.png}`, `\input{../shared}`, or `\include{intro}` for `chapters/intro.tex`. Paths from the project root, such as `figures/chart.png`, also work. Compiler files stay in a temporary folder and never appear in your project.
+
+While you type a path, Inkline lists matching project files, relative to the document's folder:
+
+- **LaTeX:** inside `\includegraphics{…}`, `\input{…}`, `\include{…}`, `\bibliography{…}`, and similar commands.
+- **Markdown:** inside `![…](…)` and `[…](…)`.
+- **HTML:** inside `src="…"`, `href="…"`, and CSS `url(…)`.
+
+Use ↑/↓ to choose, Return or Tab to insert, and Escape to dismiss. On the Mac, ⌥Esc opens the list; on Windows, Ctrl+Space does. Graphics commands list only image types, `\include` and `\bibliography` leave out the extension they add themselves, and Markdown and HTML paths are percent-encoded.
+
 ## HTML
 
 Open an `.html` or `.htm` file, choose **File → New HTML Document**, or select **HTML** from the window’s format menu. The split preview renders the HTML and CSS as you edit. Keep linked stylesheets, fonts, and images within the selected project, or within the saved document’s folder when no project is selected. The preview uses local assets and leaves page scripts disabled. **File → Export PDF** paginates the rendered page on A4, or on the size given by a CSS `@page { size: … }` rule.
@@ -96,9 +106,23 @@ codex mcp add inkline -- /Applications/Inkline.app/Contents/MacOS/Inkline mcp \
 
 Restart Codex or start a new chat to load the connection. The MCP helper opens its matching Inkline app when a tool first needs it. The server and app communicate locally through a macOS message port. Use **MCP → MCP Access Enabled** to pause or resume access and **MCP → Connection Details** to see the most recent request.
 
-Codex can list, read, create, open, edit, save, and close documents, switch source/preview layouts and formats, compile LaTeX, and export PDFs. Open documents also appear as readable MCP resources. File operations and saved-document access follow the configured folders. Untitled documents are available to the connection. Repeat the read/write root flags to share additional folders. With no root flags, access is limited to untitled documents.
+Codex can list, read, create, open, edit, save, and close documents, switch source/preview layouts and formats, compile LaTeX, export PDFs, and build `.tex` files on disk with `build_latex_pdf`. Open documents also appear as readable MCP resources. File operations and saved-document access follow the configured folders. Untitled documents are available to the connection. Repeat the read/write root flags to share additional folders. With no root flags, access is limited to untitled documents.
 
 Text edits use Inkline’s Undo support and require the revision returned by `read_document`. A stale edit is rejected so a change made in the editor can be read before retrying. `edit_document` requires one unique occurrence of the text to replace. Existing export files and Save As destinations require an explicit `overwrite=true`. Documents with unsaved changes must be saved before MCP can close them.
+
+### Building LaTeX deliverables from an agent
+
+`build_latex_pdf` compiles a `.tex` file on disk to PDF inside the MCP helper. It never opens a window. It applies Inkline's LaTeX rules: paths relative to the file's folder, an optional `project_root`, A4 unless the preamble states a size, no shell escape, and a 45-second limit. Its result is a short summary: success, PDF path, pages, paper, up to five errors with file and line, warning counts with up to three examples, and `needs_rerun`. `include_log=true` adds the last 6,000 characters of the log. Existing PDFs require `overwrite=true`.
+
+To offer only this tool, so the client's tool list stays short, add `--tool build_latex_pdf` (repeatable). For example, for Claude Code:
+
+```sh
+claude mcp add inkline -s user -- /Applications/Inkline.app/Contents/MacOS/Inkline mcp \
+  --automation-read-root "$HOME/Documents/Claude" --automation-write-root "$HOME/Documents/Claude" \
+  --tool build_latex_pdf
+```
+
+Compared with running `pdflatex` twice in a shell on an eight-section report, the summary was about 300 characters instead of about 11,000 characters of console output. The open/compile/export tool sequence returned about 46,000 characters and opens a window.
 
 The regression test runs against a separate QA copy of the app and a temporary working folder.
 

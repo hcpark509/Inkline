@@ -44,23 +44,93 @@ async function findEngine(engine, environment = process.env) {
   }
   return null;
 }
+// Recreates the document folder's subfolders so TeX can write auxiliary files for \include{dir/file}.
+async function mirrorFolders(folder, work) {
+  const skipped = new Set(['node_modules', 'build', '.git', '.next']);
+  let created = 0;
+  async function walk(from, depth) {
+    if (depth > 4 || created >= 500) return;
+    let entries = [];
+    try {
+      entries = await fs.readdir(from, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory() || entry.name.startsWith('.') || skipped.has(entry.name)) continue;
+      const child = path.join(from, entry.name);
+      await fs.mkdir(path.join(work, path.relative(folder, child)), { recursive: true });
+      if (++created >= 500) return;
+      await walk(child, depth + 1);
+    }
+  }
+  await walk(folder, 0);
+}
+// Compiler errors in file-line-error form, with the temporary folder removed from the main file's path.
+function diagnostics(log, work) {
+  const prefixes = [work + path.sep, work + '/', './', '.\\'];
+  const found = [];
+  for (let line of log.split(/\r?\n/)) {
+    if (line.startsWith('! ')) {
+      if (!found.length) found.push({ message: line.slice(2) });
+      continue;
+    }
+    const prefix = prefixes.find((p) => line.startsWith(p));
+    if (!prefix) continue;
+    line = line.slice(prefix.length);
+    const match = /^([^:]*):(\d+):\s*(.*)$/.exec(line);
+    if (!match || match[3].startsWith('==>')) continue;
+    if (found.length === 1 && !found[0].file) found.length = 0;
+    found.push({
+      file: match[1].split(path.sep).join('/'),
+      line: Number(match[2]),
+      message: match[3],
+    });
+  }
+  return found;
+}
+const describe = (error) =>
+  error.file
+    ? `${error.file}${error.line ? ':' + error.line : ''}: ${error.message}`
+    : error.message;
+// TeX points are 1/72.27 in; PDF points are 1/72 in.
+function pageInfo(log) {
+  const written = /Output written on .*?\((\d+) pages?/.exec(log.replace(/\r?\n/g, ''));
+  const size = /Inkline page size: ([\d.]+)pt x ([\d.]+)pt/.exec(log);
+  return {
+    pages: written ? Number(written[1]) : null,
+    size: size
+      ? { width: (Number(size[1]) * 72) / 72.27, height: (Number(size[2]) * 72) / 72.27 }
+      : null,
+  };
+}
 async function compileLatex({ source, file, projectRoot, engine = 'pdflatex' }) {
   const executable = await findEngine(engine);
   if (!executable)
     throw Error(engine + ' is unavailable. Install MiKTeX or TeX Live, then recompile.');
-  const work = await fs.mkdtemp(path.join(os.tmpdir(), 'inkline-tex-'));
+  const work = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'inkline-tex-')));
   try {
-    await fs.writeFile(path.join(work, 'document.tex'), prepareLatex(source), 'utf8');
+    const name = file ? path.basename(file) : 'document.tex';
+    const main = path.join(work, name);
+    await fs.writeFile(main, prepareLatex(source), 'utf8');
+    // TeX runs in the document's folder, as on Overleaf, so ../ and subfolder paths resolve from the
+    // document. Output goes to the temporary folder, which mirrors the subfolders \include writes into.
+    const folder = file ? path.dirname(file) : projectRoot || null;
+    if (folder) await mirrorFolders(folder, work);
     const env = {
       ...process.env,
       PATH: path.dirname(executable) + path.delimiter + (process.env.PATH || ''),
-      TEXINPUTS: ['.', file ? path.dirname(file) : null, projectRoot, process.env.TEXINPUTS || '']
+      TEXINPUTS: ['.', folder, projectRoot, process.env.TEXINPUTS || '']
         .filter((v) => v !== null && v !== undefined)
         .join(path.delimiter),
       openout_any: 'p',
+      // Long temporary paths would otherwise wrap at 79 columns and split file:line errors.
+      max_print_line: '10000',
     };
+    const miktex = /miktex/i.test(executable);
     const deadline = Date.now() + 45000;
-    let log = '';
+    let log = '',
+      finalLog = '';
     for (let pass = 1; pass <= 2; pass++) {
       const result = await run(
         executable,
@@ -70,23 +140,29 @@ async function compileLatex({ source, file, projectRoot, engine = 'pdflatex' }) 
           '-interaction=nonstopmode',
           '-halt-on-error',
           '-file-line-error',
-          './document.tex',
+          ...(miktex ? ['-max-print-line=10000'] : []),
+          '-output-directory=' + work,
+          main,
         ],
-        { cwd: work, env, timeout: Math.max(1, deadline - Date.now()) },
+        { cwd: folder || work, env, timeout: Math.max(1, deadline - Date.now()) },
       );
       log += `Pass ${pass}\n${result.log}\n`;
+      finalLog = result.log;
       if (result.code !== 0) {
+        const errors = diagnostics(result.log, work);
         const error = Error(
           result.timeout
             ? 'Compilation exceeded 45 seconds.'
-            : result.log.split(/\r?\n/).find((l) => /^! |^\.\/document\.tex:/.test(l)) ||
-                'Compilation failed. Open the compile log.',
+            : errors.length
+              ? describe(errors[0])
+              : 'Compilation failed. Open the compile log.',
         );
-        error.log = log;
+        Object.assign(error, { log, finalLog, errors });
         throw error;
       }
     }
-    return { pdf: await fs.readFile(path.join(work, 'document.pdf')), log };
+    const pdf = await fs.readFile(path.join(work, name.replace(/\.[^.]*$/, '') + '.pdf'));
+    return { pdf, log, finalLog, ...pageInfo(finalLog) };
   } finally {
     await fs.rm(work, { recursive: true, force: true });
   }
@@ -121,4 +197,4 @@ function run(executable, args, options) {
     });
   });
 }
-module.exports = { findEngine, compileLatex };
+module.exports = { findEngine, compileLatex, diagnostics };

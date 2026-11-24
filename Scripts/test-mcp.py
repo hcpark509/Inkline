@@ -9,11 +9,13 @@ import sys
 
 
 class Client:
-    def __init__(self, app, read_root, write_root):
+    def __init__(self, app, read_root, write_root, only=()):
         binary = pathlib.Path(app) / "Contents/MacOS/Inkline"
         command = [str(binary), "mcp", "--automation-read-root", str(read_root)]
         if write_root is not None:
             command += ["--automation-write-root", str(write_root)]
+        for name in only:
+            command += ["--tool", name]
         self.process = subprocess.Popen(
             command,
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -60,6 +62,30 @@ class Client:
         assert self.process.wait(timeout=5) == 0
 
 
+def headless_build(app, folder):
+    """build_latex_pdf compiles in the helper; --tool limits the offered tools."""
+    root = folder / "build-root"
+    (root / "chapters").mkdir(parents=True)
+    (root / "shared.tex").write_text("Shared text.\n")
+    tex = root / "chapters" / "paper.tex"
+    tex.write_text("\\documentclass{article}\n\\begin{document}\n\\input{../shared}\n\\end{document}\n")
+    client = Client(app, root, root, only=["build_latex_pdf"])
+    try:
+        assert [t["name"] for t in client.request("tools/list")["tools"]] == ["build_latex_pdf"]
+        result = client.call("build_latex_pdf", path=str(tex))
+        assert result["success"] and result["pages"] == 1 and result["paper"] == "A4", result
+        assert (root / "chapters" / "paper.pdf").read_bytes().startswith(b"%PDF")
+        client.call("build_latex_pdf", path=str(tex), expect_error=True)
+        try:
+            client.request("tools/call", {"name": "list_documents", "arguments": {}})
+            raise AssertionError("--tool offered a tool that was not listed")
+        except RuntimeError as error:
+            assert "Unknown tool" in str(error), error
+    finally:
+        client.close()
+    print("Headless build_latex_pdf and --tool filtering passed.")
+
+
 def exercise(app, folder):
     root = folder / "shared"
     root.mkdir()
@@ -68,7 +94,7 @@ def exercise(app, folder):
     client = Client(app, root, root)
     try:
         tools = client.request("tools/list")["tools"]
-        assert len(tools) >= 12
+        assert len(tools) >= 13 and any(t["name"] == "build_latex_pdf" for t in tools)
         document = client.call("create_document", format="markdown", source="# MCP test\n\n한글 ✓\n")
         doc_id = document["document_id"]
         first = client.call("read_document", document_id=doc_id)
@@ -159,3 +185,4 @@ if __name__ == "__main__":
     if len(sys.argv) != 3:
         raise SystemExit("Usage: test-mcp.py /path/to/QA.app /path/to/existing/temporary-folder")
     exercise(pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2]))
+    headless_build(pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2]))

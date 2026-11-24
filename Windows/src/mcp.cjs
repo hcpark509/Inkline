@@ -7,6 +7,7 @@ const readline = require('node:readline');
 const { spawn } = require('node:child_process');
 const { randomBytes } = require('node:crypto');
 const { Scope, digest, atomicWrite } = require('./documents.cjs');
+const build = require('./build.cjs');
 const version = require('../package.json').version;
 const protocols = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05'];
 const str = { type: 'string' },
@@ -96,6 +97,7 @@ const tools = [
     { document_id: doc, engine: { type: 'string', enum: ['pdflatex', 'xelatex'] } },
     ['document_id'],
   ),
+  build.definition,
   tool(
     'export_pdf',
     'Export current revision to a PDF within a write root.',
@@ -105,8 +107,8 @@ const tools = [
     true,
   ),
 ];
-function validate(name, args) {
-  const schema = tools.find((t) => t.name === name)?.inputSchema;
+function validate(name, args, offered = tools) {
+  const schema = offered.find((t) => t.name === name)?.inputSchema;
   if (!schema) throw Error('Unknown Inkline tool.');
   for (const key of schema.required) if (!(key in args)) throw Error('Missing argument: ' + key);
   for (const [key, value] of Object.entries(args)) {
@@ -216,19 +218,29 @@ async function getToken(userData) {
 }
 function rootsFromArgs(args) {
   const read = [],
-    write = [];
+    write = [],
+    only = [];
   for (let i = 0; i < args.length; i += 2) {
-    if (!args[i + 1] || !['--automation-read-root', '--automation-write-root'].includes(args[i]))
+    if (
+      !args[i + 1] ||
+      !['--automation-read-root', '--automation-write-root', '--tool'].includes(args[i])
+    )
       throw Error(
-        'Use --automation-read-root or --automation-write-root followed by an absolute folder path.',
+        'Use --automation-read-root or --automation-write-root followed by an absolute folder path, or --tool followed by a tool name.',
       );
-    (args[i] === '--automation-read-root' ? read : write).push(args[i + 1]);
+    if (args[i] === '--tool') {
+      if (!tools.some((t) => t.name === args[i + 1]))
+        throw Error('Unknown tool for --tool: ' + args[i + 1]);
+      only.push(args[i + 1]);
+    } else (args[i] === '--automation-read-root' ? read : write).push(args[i + 1]);
   }
-  return { read, write };
+  return { read, write, only };
 }
 async function runHelper({ app, args, pipe, userData, appPath, guiExecutable = process.execPath }) {
-  const roots = rootsFromArgs(args);
-  await Scope.create(roots.read, roots.write);
+  const { only, ...roots } = rootsFromArgs(args);
+  const scope = await Scope.create(roots.read, roots.write);
+  // --tool limits the connection to the named tools, which keeps a client's tool list short.
+  const offered = only.length ? tools.filter((t) => only.includes(t.name)) : tools;
   let initialized = false;
   async function request(method, params) {
     let token = await getToken(userData);
@@ -281,13 +293,22 @@ async function runHelper({ app, args, pipe, userData, appPath, guiExecutable = p
             : protocols[0],
           capabilities: { tools: {}, resources: {} },
           serverInfo: { name: 'Inkline Windows', version },
+          instructions:
+            'For a .tex file on disk, build_latex_pdf compiles it to PDF without opening a window. Use list_documents to find open documents.',
         };
       } else if (input.method === 'ping') result = {};
       else {
         if (!initialized) throw Error('Initialize the MCP connection first.');
-        if (input.method === 'tools/list') result = { tools };
-        else if (['tools/call', 'resources/list', 'resources/read'].includes(input.method)) {
-          if (input.method === 'tools/call') validate(params.name, params.arguments || {});
+        if (input.method === 'tools/list') result = { tools: offered };
+        else if (input.method === 'tools/call' && params.name === build.name) {
+          validate(params.name, params.arguments || {}, offered);
+          try {
+            result = toolResult(await build.buildLatexPdf(params.arguments || {}, scope));
+          } catch (e) {
+            result = { content: [{ type: 'text', text: e.message }], isError: true };
+          }
+        } else if (['tools/call', 'resources/list', 'resources/read'].includes(input.method)) {
+          if (input.method === 'tools/call') validate(params.name, params.arguments || {}, offered);
           result = await request(input.method, params);
         } else throw Error('Unsupported MCP method.');
       }

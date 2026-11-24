@@ -19,6 +19,8 @@ import {
   isolateHistory,
 } from '@codemirror/commands';
 import { searchKeymap, openSearchPanel, highlightSelectionMatches } from '@codemirror/search';
+import { autocompletion, completionKeymap } from '@codemirror/autocomplete';
+import { pathContext, rankPaths } from './paths.mjs';
 import {
   syntaxHighlighting,
   HighlightStyle,
@@ -130,6 +132,30 @@ function editorAppearance() {
     ),
   ];
 }
+// Project file paths offered while typing \includegraphics{, \input{, ![](…) or src="…".
+let pathFiles = { documentId: null, made: 0, files: [] };
+async function filesFor(documentId) {
+  if (pathFiles.documentId === documentId && Date.now() - pathFiles.made < 3000)
+    return pathFiles.files;
+  const files = (await api.call('project-files', { documentId })) || [];
+  pathFiles = { documentId, made: Date.now(), files };
+  return files;
+}
+async function pathCompletions(context) {
+  const r = record();
+  if (!r) return null;
+  const line = context.state.doc.lineAt(context.pos);
+  const found = pathContext(line.text.slice(0, context.pos - line.from), r.meta.format);
+  if (!found) return null;
+  const options = rankPaths(found, await filesFor(active));
+  if (!options.length) return null;
+  const from = context.pos - found.partial.length;
+  return {
+    from,
+    options: options.map((label) => ({ label, type: 'file' })),
+    filter: false,
+  };
+}
 function createState(doc) {
   return EditorState.create({
     doc: doc.source,
@@ -145,6 +171,7 @@ function createState(doc) {
       highlightActiveLineGutter(),
       foldGutter(),
       bracketMatching(),
+      autocompletion({ override: [pathCompletions], icons: false, closeOnBlur: true }),
       EditorView.lineWrapping,
       language.of(languageFor(doc.format)),
       numbers.of(current.settings.showLineNumbers ? lineNumbers() : []),
@@ -164,6 +191,7 @@ function createState(doc) {
             return true;
           },
         },
+        ...completionKeymap,
         ...defaultKeymap,
         ...historyKeymap,
         ...searchKeymap,

@@ -616,6 +616,38 @@ async function exportPDF(doc, file, overwrite = false, expected = revision(doc))
   await atomicWrite(file, data, overwrite);
   return file;
 }
+// Files offered by path autocomplete, as paths relative to the document's folder.
+const fileCache = new Map();
+async function projectFiles(doc) {
+  const base = doc.path ? path.dirname(doc.path) : store.projectFor(doc);
+  if (!base) return [];
+  const boundary = store.projectFor(doc) || base;
+  const cached = fileCache.get(boundary);
+  let files = cached && Date.now() - cached.made < 3000 ? cached.files : null;
+  if (!files) {
+    files = [];
+    const skipped = new Set(['node_modules', 'build', '.git', '.next', 'dist']);
+    const walk = async (folder, depth) => {
+      if (depth > 8 || files.length >= 5000) return;
+      let entries = [];
+      try {
+        entries = await fs.readdir(folder, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const entry of entries) {
+        if (entry.name.startsWith('.') || files.length >= 5000) continue;
+        const child = path.join(folder, entry.name);
+        if (entry.isDirectory()) {
+          if (!skipped.has(entry.name)) await walk(child, depth + 1);
+        } else if (entry.isFile()) files.push(child);
+      }
+    };
+    await walk(boundary, 0);
+    fileCache.set(boundary, { made: Date.now(), files });
+  }
+  return files.map((file) => path.relative(base, file).split(path.sep).join('/'));
+}
 async function invoke(method, a = {}) {
   if (method === 'state') return state();
   if (method === 'settings') {
@@ -636,6 +668,7 @@ async function invoke(method, a = {}) {
     return state();
   }
   if (method === 'project-tree') return store.tree(a.folder);
+  if (method === 'project-files') return projectFiles(store.get(a.documentId));
   if (method === 'preview-url') return previewURL(store.get(a.documentId));
   if (method === 'external') {
     if (!/^(https?:|mailto:)/i.test(a.url)) throw Error('Unsupported link.');

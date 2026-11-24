@@ -71,6 +71,7 @@ enum MCPServer {
         do {
             var read: [String] = []
             var write: [String] = []
+            var only: Set<String> = []
             var index = 0
             while index < arguments.count {
                 let option = arguments[index]
@@ -78,11 +79,18 @@ enum MCPServer {
                 switch option {
                 case "--automation-read-root": read.append(arguments[index + 1])
                 case "--automation-write-root": write.append(arguments[index + 1])
+                case "--tool":
+                    guard tools.contains(where: { $0["name"] as? String == arguments[index + 1] }) else {
+                        throw AutomationError(message: "Unknown tool for --tool: \(arguments[index + 1])")
+                    }
+                    only.insert(arguments[index + 1])
                 default: throw AutomationError(message: "Unknown MCP option: \(option)")
                 }
                 index += 2
             }
-            _ = try AutomationScope(read: read, write: write)
+            let scope = try AutomationScope(read: read, write: write)
+            // --tool limits the connection to the named tools, which keeps a client's tool list short.
+            let offered = only.isEmpty ? tools : tools.filter { only.contains($0["name"] as? String ?? "") }
             var initialized = false
             while let line = readLine() {
                 guard !line.trimmingCharacters(in: .whitespaces).isEmpty else { continue }
@@ -120,19 +128,27 @@ enum MCPServer {
                         result = [
                             "protocolVersion": negotiated, "capabilities": ["tools": [:], "resources": [:]],
                             "serverInfo": ["name": "inkline", "title": "Inkline", "version": version],
-                            "instructions": "Use list_documents to find open documents. Read before editing and pass the returned revision. Content edits support Inkline Undo. Only configured file roots are accessible. Format changes preserve saved documents by opening an untitled copy."
+                            "instructions": "For a .tex file on disk, build_latex_pdf compiles it to PDF without opening a window. Use list_documents to find open documents. Read before editing and pass the returned revision. Content edits support Inkline Undo. Only configured file roots are accessible. Format changes preserve saved documents by opening an untitled copy."
                         ]
                     } else if method == "ping" {
                         result = [:]
                     } else {
                         guard initialized else { throw RPCError(code: -32000, message: "Initialize the server first.") }
                         switch method {
-                        case "tools/list": result = ["tools": tools]
+                        case "tools/list": result = ["tools": offered]
                         case "resources/templates/list": result = ["resourceTemplates": []]
                         case "tools/call":
                             guard let name = params["name"] as? String,
-                                  tools.contains(where: { $0["name"] as? String == name }) else {
+                                  offered.contains(where: { $0["name"] as? String == name }) else {
                                 throw RPCError(code: -32602, message: "Unknown tool name.")
+                            }
+                            if name == LatexBuild.toolName {
+                                do {
+                                    result = toolResult(try LatexBuild.run(params["arguments"] as? [String: Any] ?? [:], scope: scope))
+                                } catch {
+                                    result = toolError(error)
+                                }
+                                break
                             }
                             result = try forward(["method": method, "params": params, "readRoots": read, "writeRoots": write])
                         case "resources/list", "resources/read":
@@ -162,7 +178,7 @@ enum MCPServer {
     }
 
     private static func send(_ value: [String: Any]) throws {
-        var data = try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys])
+        var data = try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys, .withoutEscapingSlashes])
         data.append(0x0A)
         try FileHandle.standardOutput.write(contentsOf: data)
     }
@@ -202,7 +218,7 @@ enum MCPServer {
     }
 
     static func toolResult(_ object: [String: Any]) -> [String: Any] {
-        let data = try! JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+        let data = try! JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes])
         return ["content": [["type": "text", "text": String(decoding: data, as: UTF8.self)]],
                 "structuredContent": object, "isError": false]
     }
@@ -247,6 +263,10 @@ enum MCPServer {
                  ["document_id": doc, "format": format], required: ["document_id", "format"]),
             tool("compile_latex", "Compile a LaTeX document using the installed TeX engine. Return the compile log and whether the PDF is current.",
                  ["document_id": doc, "engine": ["type": "string", "enum": ["pdflatex", "xelatex"]]], required: ["document_id"]),
+            [
+                "name": LatexBuild.toolName, "description": LatexBuild.description, "inputSchema": LatexBuild.schema,
+                "annotations": ["readOnlyHint": false, "destructiveHint": false, "openWorldHint": false]
+            ],
             tool("export_pdf", "Export the rendered document to an absolute PDF path within a write root. LaTeX is compiled first. Read first and supply expected_revision. Existing PDFs require overwrite=true.",
                  ["document_id": doc, "expected_revision": revision, "path": string, "overwrite": boolean],
                  required: ["document_id", "expected_revision", "path"], destructive: true)
