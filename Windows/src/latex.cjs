@@ -67,25 +67,25 @@ async function mirrorFolders(folder, work) {
   await walk(folder, 0);
 }
 // Compiler errors in file-line-error form, with the temporary folder removed from the main file's path.
+// TeX Live on Windows prints paths with forward slashes, so prefixes are compared with slashes normalized.
 function diagnostics(log, work) {
-  const prefixes = [work + path.sep, work + '/', './', '.\\'];
+  const slashes = (value) => value.replace(/\\/g, '/');
+  const fold = (value) => (process.platform === 'win32' ? value.toLowerCase() : value);
+  const prefixes = [fold(slashes(work)) + '/', './'];
   const found = [];
   for (let line of log.split(/\r?\n/)) {
     if (line.startsWith('! ')) {
       if (!found.length) found.push({ message: line.slice(2) });
       continue;
     }
-    const prefix = prefixes.find((p) => line.startsWith(p));
+    const normalized = fold(slashes(line));
+    const prefix = prefixes.find((p) => normalized.startsWith(p));
     if (!prefix) continue;
     line = line.slice(prefix.length);
     const match = /^([^:]*):(\d+):\s*(.*)$/.exec(line);
     if (!match || match[3].startsWith('==>')) continue;
     if (found.length === 1 && !found[0].file) found.length = 0;
-    found.push({
-      file: match[1].split(path.sep).join('/'),
-      line: Number(match[2]),
-      message: match[3],
-    });
+    found.push({ file: slashes(match[1]), line: Number(match[2]), message: match[3] });
   }
   return found;
 }

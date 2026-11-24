@@ -408,6 +408,22 @@ test(
   },
 );
 
+test('LaTeX errors are located when TeX prints the temporary path with forward slashes', () => {
+  const { diagnostics } = require('../src/latex.cjs');
+  const work = 'C:\\Users\\runner\\AppData\\Local\\Temp\\inkline-tex-abc';
+  const log = [
+    '! Undefined control sequence.',
+    'C:/Users/runner/AppData/Local/Temp/inkline-tex-abc/document.tex:3: Undefined control sequence.',
+    'C:/Users/runner/AppData/Local/Temp/inkline-tex-abc/document.tex:3:  ==> Fatal error occurred, no output PDF file produced!',
+    './chapters/intro.tex:7: Missing $ inserted.',
+  ].join('\r\n');
+  assert.deepEqual(diagnostics(log, work), [
+    { file: 'document.tex', line: 3, message: 'Undefined control sequence.' },
+    { file: 'chapters/intro.tex', line: 7, message: 'Missing $ inserted.' },
+  ]);
+  assert.deepEqual(diagnostics('! Emergency stop.', work), [{ message: 'Emergency stop.' }]);
+});
+
 test('path suggestions follow the Overleaf-style rules shared with macOS', async () => {
   const { pathContext, rankPaths } = await import('../renderer/paths.mjs');
   const files = [
